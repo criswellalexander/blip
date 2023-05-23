@@ -765,7 +765,29 @@ def blip(paramsfile='params.ini',resume=False):
             ## if we're not doing additional samples and the run is over, raise a helpful error.
             elif N_current==params['Nsamples']:
                 raise ValueError("Run was resumed but has already finished. If you want to continue adding samples to the chain, specify additional_samples=[N desired] in the run directory params file before resuming.")
-
+        
+        ## experiment - we are getting slowdowns because each submodel has a attached routines to generate the responses
+        ## JAX is tracing these methods to JIT them; these *extremely* expensive functions, and completely unneeded at runtime
+        ## try detachng/re-attaching them before/after sampling
+        import pdb; pdb.set_trace()
+        response_backup = {}
+        response_list = ['response','recompute_response',
+                         'asgwb_mich_response','asgwb_xyz_response','asgwb_aet_response',
+                         'doppler_response','michelson_response','aet_response',
+                         'isgwb_mich_response','isgwb_xyz_response','isgwb_aet_response',
+                         'pixel_mich_response','pixel_xyz_response','pixel_aet_response']
+        for smn in lisaModel.submodel_names:
+            response_backup[smn] = {key:{'removed':False} for key in response_list}
+#            response_backup[smn] = {'removed_response':False}
+            for response in response_list:
+                if hasattr(lisaModel.submodels[smn],response):
+                    response_backup[smn][response]['removed'] = True
+                    response_backup[smn][response]['method'] = getattr(lisaModel.submodels[smn],response)
+                    setattr(lisaModel.submodels[smn],response,None)
+#                    delattr(lisaModel.submodels[smn],response)
+#                    response_backup[smn]['method'] = lisaModel.submodels[smn].response
+#                    del lisaModel.submodels[smn].response
+        import pdb; pdb.set_trace()
         ## run sampler
         if params['checkpoint']:
             checkpoint_file = params['out_dir']+'/checkpoint.pickle'
@@ -780,7 +802,19 @@ def blip(paramsfile='params.ini',resume=False):
             print("Elapsed time to converge: {} s".format(t2-t1))
         ## save chain
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
-    
+        
+        ## re-attach response function methods
+        for smn in lisaModel.submodel_names:
+            for response in response_list:
+                if response_backup[smn][response]['removed']:
+                    setattr(lisaModel.submodels[smn],response,response_backup[smn][response]['method'] )
+#                if hasattr(lisaModel.submodels[smn],response):
+#                    response_backup[smn][response]['removed'] = True
+#                    response_backup[smn][response]['method'] = getattr(lisaModel.submodels[smn],response)
+#                    delattr(lisaModel.submodels[smn],response)
+#            if response_backup[smn]['removed_response']:
+#                lisaModel.submodels[smn].response = response_backup[smn]['method']
+        import pdb; pdb.set_trace()
     elif params['sampler'] == 'nessai':
         # Create engine
         if not resume:
