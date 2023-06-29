@@ -353,13 +353,13 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
                     model_legend_elements.append(Line2D([0],[0],color=Injection.components[component_name].color,lw=3,label=Injection.components[component_name].fancyname))
     
     ## avoid plot squishing due to signal spectra with cutoffs, etc.
-    if astro_kwargs['ymin'] is None:
-        if len(ymins) > 0:
-            ymin = np.min(ymins)
-            if ymin < 1e-43:
-                plt.ylim(bottom=1e-43)
-    else:
-        plt.ylim(bottom=astro_kwargs['ymin'])
+#    if astro_kwargs['ymin'] is None:
+#        if len(ymins) > 0:
+#            ymin = np.min(ymins)
+#            if ymin < 1e-43:
+#                plt.ylim(bottom=1e-43)
+#    else:
+    plt.ylim(bottom=astro_kwargs['ymin'])
     plt.ylim(top=astro_kwargs['ymax'])
     
     ax = plt.gca()
@@ -446,18 +446,28 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
                 if component_name == 'noise':
                     Injection.plot_injected_spectra(component_name,channels='22',ymins=ymins,**kwargs)
                 else:
-                    Injection.plot_injected_spectra(component_name,fs_new=fdata,convolved=True,ymins=ymins,**kwargs)
+                    for component_name in Injection.sgwb_component_names:
+                        found_match = False
+                        for smn in Model.submodel_names:
+                            if smn != 'noise' and Injection.components[component_name].spatial_model_name == Model.submodels[smn].spatial_model_name:
+                                found_match = True
+                                data_response = Model.submodels[smn].response_mat
+                                break
+                        if not found_match:
+                            print("Warning: no response found for injection at data frequencies. Resorting to interpolation to plot injected spectra at data frequencies...")
+                            data_response = None
+                    Injection.plot_injected_spectra(component_name,fs_new=fdata,response_new=data_response,convolved=True,ymins=ymins,**kwargs)
                     if component_name not in Model.submodel_names and component_name not in signal_aliases:
                         model_legend_elements.append(Line2D([0],[0],color=Injection.components[component_name].color,lw=3,label=Injection.components[component_name].fancyname))
         
         ## avoid plot squishing due to signal spectra with cutoffs, etc.
-        if det_kwargs['ymin'] is None:
-            if len(ymins) > 0:
-                ymin = np.min(ymins)
-                if ymin < 1e-43:
-                    plt.ylim(bottom=1e-43)
-        else:
-            plt.ylim(bottom=det_kwargs['ymin'])
+#        if det_kwargs['ymin'] is None:
+#            if len(ymins) > 0:
+#                ymin = np.min(ymins)
+#                if ymin < 1e-43:
+#                    plt.ylim(bottom=1e-43)
+#        else:
+        plt.ylim(bottom=det_kwargs['ymin'])
         plt.ylim(top=det_kwargs['ymax'])
         
         ax = plt.gca()

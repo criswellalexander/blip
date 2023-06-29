@@ -68,6 +68,11 @@ class LISA(LISAdata, Model):
         
         self.timearray, self.h1, self.h2, self.h3 = loaded_data['timearray'], loaded_data['h1'], loaded_data['h2'], loaded_data['h3']
         
+        if self.params['dur'] < self.params['loaded_dur']:
+            end_idx = int((self.params['dur'] + self.params['seglen'])*self.params['fs'])
+            self.timearray, self.h1, self.h2, self.h3 = self.timearray[:end_idx], self.h1[:end_idx], self.h2[:end_idx], self.h3[:end_idx]
+            
+        
         # Generate lisa freq domain data from time domain data
         self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
 
@@ -234,7 +239,17 @@ class LISA(LISAdata, Model):
         
         ymins = []
         for component_name in self.Injection.sgwb_component_names:
-            S1_gw = self.Injection.plot_injected_spectra(component_name,fs_new=self.fdata,convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.Injection.components[component_name].color)
+            found_match = False
+            if hasattr(self,"Model"):
+                for smn in self.Model.submodel_names:
+                    if smn != 'noise' and self.Injection.components[component_name].spatial_model_name == self.Model.submodels[smn].spatial_model_name:
+                        found_match = True
+                        data_response = self.Model.submodels[smn].response_mat
+                        break
+            if not found_match:
+                print("Warning: no response found for injection at data frequencies. Resorting to interpolation to plot injected spectra at data frequencies...")
+                data_response = None
+            S1_gw = self.Injection.plot_injected_spectra(component_name,fs_new=self.fdata,response_new=data_response,convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.Injection.components[component_name].color)
             ymins.append(S1_gw.min())
             S2_gw, S3_gw = self.Injection.compute_convolved_spectra(component_name,fs_new=self.fdata,channels='22'), self.Injection.compute_convolved_spectra(component_name,fs_new=self.fdata,channels='33')
             S1, S2, S3 = S1+S1_gw, S2+S2_gw, S3+S3_gw
@@ -242,10 +257,10 @@ class LISA(LISAdata, Model):
         plt.loglog(self.fdata, S1, label='Simulated Total spectrum', lw=0.75,color='cadetblue')
 
         ## avoid plot squishing due to signal spectra with cutoffs, etc.
-        if len(ymins) > 0:
-            ymin = np.min(ymins)
-            if ymin < 1e-43:
-                plt.ylim(bottom=1e-43)
+#        if len(ymins) > 0:
+#            ymin = np.min(ymins)
+#            if ymin < 1e-43:
+#                plt.ylim(bottom=1e-43)
         
         plt.legend(loc='upper right')
         plt.xlabel('$f$ in Hz')
@@ -451,12 +466,20 @@ def blip(paramsfile='params.ini',resume=False):
                 loaded_inj = pickle.load(paramfile)
             ## for this to work, all params that impact the data/response times/frequencies/types can't change
             ## but you can change e.g., recovery model, sampler, etc.
-            required_immutable = ['fmin','fmax','dur','seglen','fs','nside','tstart','lisa_config','tdi_lev','datatype']
+            required_immutable = ['fs','nside','tstart','lisa_config','tdi_lev','datatype']
             requirements_violated = [requirement for requirement in required_immutable if params[requirement] != loaded_params[requirement] ]
+            if params['fmin'] < loaded_params['fmin']:
+                raise ValueError("Loaded injection is incompatible with specified configuration; cannot have analysis fmin < data fmin.")
+            if params['fmax'] > loaded_params['fmax']:
+                raise ValueError("Loaded injection is incompatible with specified configuration; cannot have analysis fmax > data fmax.")
+            if params['dur'] > loaded_params['dur']:
+                raise ValueError("Loaded injection is incompatible with specified configuration; cannot have analysis duration > data duration.")
             if len(requirements_violated)>0:
                 raise ValueError("Loaded injection is incompatible with specified configuration due to mismatches in the following config settings: {}".format(requirements_violated))
             ## update the injection dictionary with the loaded one
             inj |= loaded_inj
+            ## update with the original duration:
+            params['loaded_dur'] = loaded_params['dur']
             ## reset the top-level injection flags to their original state
             inj['loadInj'] = True
             inj['inj_only'] = False
