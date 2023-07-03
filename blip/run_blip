@@ -466,7 +466,7 @@ def blip(paramsfile='params.ini',resume=False):
                 loaded_inj = pickle.load(paramfile)
             ## for this to work, all params that impact the data/response times/frequencies/types can't change
             ## but you can change e.g., recovery model, sampler, etc.
-            required_immutable = ['fs','nside','tstart','lisa_config','tdi_lev','datatype']
+            required_immutable = ['fs','tstart','lisa_config','tdi_lev','datatype']
             requirements_violated = [requirement for requirement in required_immutable if params[requirement] != loaded_params[requirement] ]
             if params['fmin'] < loaded_params['fmin']:
                 raise ValueError("Loaded injection is incompatible with specified configuration; cannot have analysis fmin < data fmin.")
