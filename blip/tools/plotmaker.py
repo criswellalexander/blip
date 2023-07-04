@@ -437,6 +437,7 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
         if not params['load_data']:
             ## plot the injected spectra, if known
             for component_name in Injection.component_names:
+                import pdb;pdb.set_trace()
                 ## this will overwrite the default linestyle if 'ls' is given in cm.plot_kwargs
                 kwargs = {'ls':'--','color':Injection.components[component_name].color,
                           **Injection.components[component_name].plot_kwargs}
