@@ -1556,7 +1556,7 @@ class Injection():#geometry,sph_geometry):
                     I, J = int(channels[0]) - 1, int(channels[1]) - 1
                     PSD = PSD[I,J,:]
         
-        filt = (fs>fmin)*(fs<fmax)
+        filt = (fs>=fmin)*(fs<=fmax)
         
         if legend:
             label = cm.fancyname
