@@ -460,7 +460,7 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
                             if Injection.components[component_name].lmax==Model.submodels[smn].lmax and hasattr(Injection.components[component_name],"alms_inj"):
                                 if hasattr(Model.submodels[smn],"unconvolved_response_mat"):
                                     found_match = True
-                                    data_response = jnp.einsum('ijklm,m', Model.submodels[smn].unconvolved_response_mat, Injection.components[component_name].alms_inj)
+                                    data_response = np.einsum('ijklm,m', Model.submodels[smn].unconvolved_response_mat, Injection.components[component_name].alms_inj)
                                 elif len(Model.submodels[smn].response_mat.shape)==4:
                                     found_match = True
                                     data_response = Model.submodels[smn].response_mat
