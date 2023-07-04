@@ -1429,7 +1429,6 @@ class Injection():#geometry,sph_geometry):
             fs = fs_new
             cm_args = [cm.truevals[parameter] for parameter in cm.spectral_parameters]
             if not imaginary:
-                import pdb; pdb.set_trace()
                 PSD = np.abs(np.real(np.mean(cm.compute_Sgw(fs,cm_args)[None,None,:, None]*response_new,axis=-1)))[c1_idx,c2_idx,:]
             else:
                 PSD = 1j * np.abs(np.imag(np.mean(cm.compute_Sgw(fs,cm_args)[None,None,:, None]*response_new,axis=-1)))[c1_idx,c2_idx,:]
