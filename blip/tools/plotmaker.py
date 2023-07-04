@@ -455,6 +455,15 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
                             found_match = True
                             data_response = Model.submodels[smn].response_mat
                             break
+                        ## generically accept the spherical harmonic responses
+                        elif hasattr(Injection.components[component_name],"lmax") and hasattr(Model.submodels[smn],"lmax"):
+                            if Injection.components[component_name].lmax==Model.submodels[smn].lmax and hasattr(Injection.components[component_name],"alms_inj"):
+                                if hasattr(Model.submodels[smn],"unconvolved_response_mat"):
+                                    found_match = True
+                                    data_response = jnp.einsum('ijklm,m', Model.submodels[smn].unconvolved_response_mat, Injection.components[component_name].alms_inj)
+                                elif len(Model.submodels[smn].response_mat.shape)==4:
+                                    found_match = True
+                                    data_response = Model.submodels[smn].response_mat
                     if not found_match:
                         print("Warning: no response found for injection at data frequencies. Resorting to interpolation to plot injected spectra at data frequencies...")
                         data_response = None
