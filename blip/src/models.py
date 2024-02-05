@@ -155,16 +155,18 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
                 self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
-        elif self.spectral_model_name == 'twothirdspowerlaw':
-            ## it may be worth implementing a more general fixed powerlaw model
-            ## but this suffices for investigating the effects of the stellar-origin binary background
+                
+        elif self.spectral_model_name == 'fixedalphapowerlaw':
+            if injection:
+                raise ValueError("Fixed-value submodels are not supported for injections. Please use the 'powerlaw' submodel instead.")
+            ## ensure alpha value is provided
+            if 'alpha' not in self.fixedvals.keys():
+                raise ValueError("The 'fixedalphapowerlaw' submodel requires the following parameters to be provided to the fixedvals dict: alpha.")
             self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
-            self.omegaf = self.twothirdspowerlaw_spectrum
-            self.fancyname = r'$\alpha=2/3$'+" Power Law"+submodel_count
-            if not injection:
-                self.spectral_prior = self.fixedpowerlaw_prior
-            else:
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+            self.omegaf = self.fixedalphapowerlaw_spectrum
+            self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
+            self.spectral_prior = self.amplitude_only_prior
+            
         elif self.spectral_model_name == 'brokenpowerlaw':
             self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
             self.omegaf = self.broken_powerlaw_spectrum
@@ -205,7 +207,20 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
                 self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
                 self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = self.injvals['log_fscale']
-                
+        
+        elif self.spectral_model_name == 'truncatedpowerlaw1par':
+            self.spectral_parameters = self.spectral_parameters + [ r'$\log_{10} (\Omega_0)$']
+            self.omegaf = self.truncated_powerlaw_1par_spectrum
+            self.fancyname = "Truncated Power Law"+submodel_count
+            if not injection:
+                ## make sure fixed values have been provided for the slope, cutoff, and scale parameters.
+                fixedval_check = ('alpha' in self.fixedvals.keys()) and ('log_fcut' in self.fixedvals.keys()) and ('log_fscale' in self.fixedvals.keys())
+                if not fixedval_check:
+                    raise ValueError("'truncatedpowerlaw1par' submodel requires the following parameters to be provided to the fixedvals dict: alpha, log_fcut, log_fscale.")
+                self.spectral_prior = self.amplitude_only_prior
+            else:
+                raise ValueError("Using the truncatedpowerlaw1par submodel for an injection is not supported. Please use truncatedpowerlaw or truncatedpowerlaw4par submodels for injections, as you need to set the non-amplitude parameter values as well.")
+        
         elif self.spectral_model_name == 'population':
             if not injection:
                 raise ValueError("Populations are injection-only.")
@@ -527,7 +542,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         '''
         return 10**(log_omega0)*(fs/self.params['fref'])**alpha
     
-    def twothirdspowerlaw_spectrum(self,fs,log_omega0):
+    def fixedalphapowerlaw_spectrum(self,fs,log_omega0):
         '''
         Function to calculate a simple power law spectrum, fixed to the alpha=2/3 prediction for the stellar origin binary background.
         
@@ -541,7 +556,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         spectrum (array of floats) : the resulting power law spectrum
         
         '''
-        return 10**(log_omega0)*(fs/self.params['fref'])**(2/3)
+        return 10**(log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha'])
     
     def broken_powerlaw_spectrum(self,fs,alpha_1,log_omega0,alpha_2,log_fbreak):
         '''
@@ -605,6 +620,26 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         fcut = 10**log_fcut
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(alpha) * (1+jnp.tanh((fcut-fs)/fscale))
+    
+    def truncated_powerlaw_1par_spectrum(self,fs,log_omega0):
+        '''
+        Function to calculate a tanh-truncated power law spectrum with all parameters fixed save the amplitude.
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        alpha (float)        : slope of the power law
+        log_omega0 (float)   : power law amplitude of the power law in units of log dimensionless GW energy density at f_ref (if left un-truncated)
+        log_fcut (float)     : log of the cut frequency ("knee") in Hz
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting truncated power law spectrum
+        
+        '''
+        fcut = 10**self.fixedvals['log_fcut']
+        fscale = 10**self.fixedvals['log_fscale']
+        return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha']) * (1+jnp.tanh((fcut-fs)/fscale))
     
     def compute_Sgw(self,fs,omegaf_args):
         '''
@@ -819,11 +854,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         
         return [alpha, log_omega0]
     
-    def fixedpowerlaw_prior(self,theta):
+    def amplitude_only_prior(self,theta):
 
 
         '''
-        Prior function for a power law with fixed slope.
+        Generic prior function for any model that only infers the amplitude of an otherwise defined function.
+        
+        At time of writing, used for: twothirdspowerlaw, truncatedpowerlaw1par
         
         Parameters
         -----------
@@ -842,7 +879,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -26*theta[0] + 12
+        log_omega0  = -12*theta[0] - 2
         
         return [log_omega0]
     
@@ -933,8 +970,6 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         
 
         return [alpha, log_omega0, log_fcut]
-    
-    
     
     
     #############################
