@@ -539,7 +539,8 @@ def blip(paramsfile='params.ini',resume=False):
                 loaded_inj = pickle.load(paramfile)
             ## for this to work, all params that impact the data/response times/frequencies/types can't change
             ## but you can change e.g., recovery model, sampler, etc.
-            required_immutable = ['fmin','fmax','dur','seglen','fs','nside','tstart','lisa_config','tdi_lev','datatype']
+#            required_immutable = ['fmin','fmax','dur','seglen','fs','nside','tstart','lisa_config','tdi_lev','datatype']
+            required_immutable = ['dur','seglen','fs','nside','tstart','lisa_config','tdi_lev','datatype']
             requirements_violated = [requirement for requirement in required_immutable if params[requirement] != loaded_params[requirement] ]
             if len(requirements_violated)>0:
                 raise ValueError("Loaded injection is incompatible with specified configuration due to mismatches in the following config settings: {}".format(requirements_violated))
