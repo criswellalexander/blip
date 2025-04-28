@@ -1,6 +1,6 @@
 import logging
 from contextlib import contextmanager
-
+import numpy as np
 
 '''
 
@@ -151,6 +151,51 @@ def ensure_color_matching(Model,Injection):
     catch_color_duplicates(Injection,sacred_labels=matching_keys)
     
     return
+
+def get_robson19_shape_pars_from_tobs(T_obs,shape_pars=[r'$\alpha_{\rm shape}$', r'$\beta$', r'$\kappa$', r'$\gamma$', r'$f_{\rm knee}$']):
+    '''
+    Function to return the time-dependent foreground shape parameters of the Robson+19 analytic foreground spectrum,
+    given an observing time in years. The function will round the given duration to the closest observing time 
+    in Table 1 of https://arxiv.org/abs/1803.01944.
+    
+    Arguments
+    -------------
+    T_obs (float)    :  Observing duration **in years**. Will be rounded to one of (6mo, 1yr, 2yr, 4yr).
+    shape_pars (list of str) : Names of the desired shape parameters (default all) from 
+                                r'$\alpha_{\rm shape}$', r'$\beta$', r'$\kappa$', r'$\gamma$', r'$f_{\rm knee}$'
+    
+    Returns
+    -------------
+    shapevals (dict) : Dictionary of 'parameter_name':val for the shape parameters of the Robson 19 analytic foreground model.
+    
+    '''
+    ## values from Table 1 of Robson+19
+    r19_table1 = {'6mo':{r'$\alpha_{\rm shape}$':0.133, r'$\beta$':243, r'$\kappa$':482, r'$\gamma$':917, r'$f_{\rm knee}$':0.00258},
+                  '1yr':{r'$\alpha_{\rm shape}$':0.171, r'$\beta$':292, r'$\kappa$':1020, r'$\gamma$':1680, r'$f_{\rm knee}$':0.00215},
+                  '2yr':{r'$\alpha_{\rm shape}$':0.165, r'$\beta$':299, r'$\kappa$':611, r'$\gamma$':1340, r'$f_{\rm knee}$':0.00173},
+                  '4yr':{r'$\alpha_{\rm shape}$':0.138, r'$\beta$':-221, r'$\kappa$':521, r'$\gamma$':1680, r'$f_{\rm knee}$':0.00113}
+                  }
+    ## catch if T_obs is given in s
+    if (T_obs > 11) and (T_obs >= 1e5):
+        print("Warning, likely trying to reference Robson+19 Table 1 with T_obs given in seconds. Converting to years...")
+    elif T_obs > 4.1:
+        print("Warning: Robson+19 Table 1 shape parameter values only available for up to a 4yr observing duration. Defaulting to the 4yr values...")
+    
+    ## convert T_obs to closest value and get corresponding key
+    table_times = np.array([0.5,1,2,4])
+    table_time_strings = ['6mo','1yr','2yr','4yr']
+    t_idx = np.argmin(np.abs(table_times - T_obs))
+    r19_key = table_time_strings[t_idx]
+    
+    
+    ## build shapeval dict
+    shapevals = {key:r19_table1[r19_key][key] for key in shape_pars}
+    
+    return shapevals
+    
+    
+    
+    
 
 ## function for telling healpy to hush up
 @contextmanager

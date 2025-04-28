@@ -6,7 +6,7 @@ import logging
 import os, shutil, pickle
 import time
 #from multiprocessing import Pool
-from blip.src.utils import log_manager, catch_duplicates, gen_suffixes, catch_color_duplicates
+from blip.src.utils import log_manager, catch_duplicates, gen_suffixes, catch_color_duplicates, get_robson19_shape_pars_from_tobs
 from blip.src.geometry import geometry
 #from blip.src.sph_geometry import sph_geometry
 from blip.src.fast_geometry import fast_geometry
@@ -310,6 +310,31 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.mwspec4par_prior
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
+        
+        elif self.spectral_model_name == 'robson19foreground':
+            ## implementation of the Robson+19 analytic foreground model.
+            ## this is a variation of the tanh-truncated foreground, but with
+            ## additional, time-dependent shape parameters due to subtraction of resolved systems
+            ## for the BLIP implementation, it has been recast into Omega_GW space
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$',r'$\log_{10} (\Omega_0)$']
+            self.omegaf = self.robson19_foreground_spectrum
+            self.fancyname = "MW Foreground"+submodel_count
+            if not injection:
+                self.spectral_prior = self.robson19foreground_prior
+                if 'T_obs' not in self.fixedvals.keys():
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    self.fixedvals |= shape_fixedvals
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
+                    self.fixedvals |= shape_fixedvals
+            else:
+                ## define truevals
+                if 'T_obs' not in self.truevals.keys():
+                    raise ValueError("When simulated data with the Robson+19 foreground spectral model, you must specify T_obs as a trueval.")
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.truevals['T_obs'])
+                    self.truevals |= shape_fixedvals
+            
         
         elif self.spectral_model_name == 'lmcspec':
             ## this is a spectral model tailored to analyses of the LMC SGWB
