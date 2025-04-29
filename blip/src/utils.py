@@ -176,17 +176,19 @@ def get_robson19_shape_pars_from_tobs(T_obs,shape_pars=[r'$\alpha_{\rm shape}$',
                   '4yr':{r'$\alpha_{\rm shape}$':0.138, r'$\beta$':-221, r'$\kappa$':521, r'$\gamma$':1680, r'$f_{\rm knee}$':0.00113}
                   }
     ## catch if T_obs is given in s
-    if (T_obs > 11) and (T_obs >= 1e5):
-        print("Warning, likely trying to reference Robson+19 Table 1 with T_obs given in seconds. Converting to years...")
-    elif T_obs > 4.1:
-        print("Warning: Robson+19 Table 1 shape parameter values only available for up to a 4yr observing duration. Defaulting to the 4yr values...")
+    if type(T_obs) is not str:
+        if (T_obs > 11) and (T_obs >= 1e5):
+            print("Warning, likely trying to reference Robson+19 Table 1 with T_obs given in seconds. Converting to years...")
+        elif T_obs > 4.1:
+            print("Warning: Robson+19 Table 1 shape parameter values only available for up to a 4yr observing duration. Defaulting to the 4yr values...")
     
-    ## convert T_obs to closest value and get corresponding key
-    table_times = np.array([0.5,1,2,4])
-    table_time_strings = ['6mo','1yr','2yr','4yr']
-    t_idx = np.argmin(np.abs(table_times - T_obs))
-    r19_key = table_time_strings[t_idx]
-    
+        ## convert T_obs to closest value and get corresponding key
+        table_times = np.array([0.5,1,2,4])
+        table_time_strings = ['6mo','1yr','2yr','4yr']
+        t_idx = np.argmin(np.abs(table_times - T_obs))
+        r19_key = table_time_strings[t_idx]
+    else:
+        r19_key = T_obs
     
     ## build shapeval dict
     shapevals = {key:r19_table1[r19_key][key] for key in shape_pars}

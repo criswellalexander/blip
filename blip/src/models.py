@@ -316,11 +316,38 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a variation of the tanh-truncated foreground, but with
             ## additional, time-dependent shape parameters due to subtraction of resolved systems
             ## for the BLIP implementation, it has been recast into Omega_GW space
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$',r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10}A$']
             self.omegaf = self.robson19_foreground_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
                 self.spectral_prior = self.robson19foreground_prior
+                if 'T_obs' not in self.fixedvals.keys():
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    self.fixedvals |= shape_fixedvals
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
+                    self.fixedvals |= shape_fixedvals
+            else:
+                ## define truevals
+                if 'T_obs' not in self.injvals.keys():
+                    raise ValueError("When simulated data with the Robson+19 foreground spectral model, you must specify T_obs as a trueval.")
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.injvals['T_obs'])
+                    self.truevals |= shape_fixedvals
+                
+                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                self.fixedvals = self.truevals
+            
+        elif self.spectral_model_name == 'robson19foregroundvaried':
+            ## implementation of the Robson+19 analytic foreground model.
+            ## this is a variation of the tanh-truncated foreground, but with
+            ## additional, time-dependent shape parameters due to subtraction of resolved systems
+            ## for the BLIP implementation, it has been recast into Omega_GW space
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$',r'$\log_{10}A$',r'$\log_{10}f_{\rm knee}$']
+            self.omegaf = self.robson19_foreground_varied_spectrum
+            self.fancyname = "MW Foreground"+submodel_count
+            if not injection:
+                self.spectral_prior = self.robson19foregroundvaried_prior
                 if 'T_obs' not in self.fixedvals.keys():
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
                     self.fixedvals |= shape_fixedvals
@@ -334,6 +361,15 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 else:
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.truevals['T_obs'])
                     self.truevals |= shape_fixedvals
+            
+                self.truevals[r'$\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$A$'] = self.injvals['A']
+                if 'fknee' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = jnp.log10(self.injvals['fknee'])
+                elif 'log_fknee' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = self.injvals['log_fknee']
+                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                self.fixedvals = self.truevals
             
         
         elif self.spectral_model_name == 'lmcspec':
@@ -941,6 +977,64 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha']) * (1+jnp.tanh((fcut-fs)/fscale))
     
+    def robson19_foreground_spectrum(self,fs,logA):
+        '''
+        Function to calculate an analytical spectrum for the Galactic foreground of the form given in Robson et al. (2019) (arXiv:1803.01944)
+        
+        NOTE: this is given in terms of PSD amplitude A, as opposed to the usual units used in BLIP (dimensionless GW energy density)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        A (float)   : power law amplitude of the power law in units of **PSD** at f_ref (if left un-truncated)
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting analytical foreground spectrum
+        
+        '''
+        
+        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        beta_shape = self.fixedvals[r'$\beta$']
+        kappa = self.fixedvals[r'$\kappa$']
+        gamma = self.fixedvals[r'$\gamma$']
+        log_fknee = jnp.log10(self.fixedvals[r'$f_{\rm knee}$'])
+        
+        
+        Sgw = 10**logA * (fs/self.params['fref'])**(-7/3) * jnp.exp(-fs**alpha_shape + beta_shape*fs*jnp.sin(kappa*fs)) * (1 + jnp.tanh(gamma*(10**log_fknee - fs)))
+        ## defined in terms of Sgw, so need to convert to be in terms of Omegaf
+        return self.compute_Omega0_from_Sgw(fs,Sgw)
+    
+    def robson19_foreground_varied_spectrum(self,fs,alpha,logA,log_fknee):
+        '''
+        Function to calculate an analytical spectrum for the Galactic foreground of the form given in Robson et al. (2019) (arXiv:1803.01944)
+        
+        This version also varies the slope alpha and break ("knee") frequency f_knee.
+        
+        NOTE: this is given in terms of PSD amplitude A, as opposed to the usual units used in BLIP (dimensionless GW energy density)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        A (float)   : power law amplitude of the power law in units of **PSD** at f_ref (if left un-truncated)
+        alpha (float) : power law slope above the truncation
+        log_fknee (float) : Log10 of the break ("knee") frequency.
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting analytical foreground spectrum
+        
+        '''
+        
+        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        beta_shape = self.fixedvals[r'$\beta$']
+        kappa = self.fixedvals[r'$\kappa$']
+        gamma = self.fixedvals[r'$\gamma$']
+        
+        Sgw = 10**logA * (fs/self.params['fref'])**(alpha) * jnp.exp(-fs**alpha_shape + beta_shape*fs*jnp.sin(kappa*fs)) * (1 + jnp.tanh(gamma*(10**log_fknee - fs)))
+        ## defined in terms of Sgw, so need to convert to be in terms of Omegaf
+        return self.compute_Omega0_from_Sgw(fs,Sgw)
+    
     def fixed_truncated_powerlaw_spectrum(self,fs):
         '''
         Function to calculate a tanh-truncated power law spectrum with all parameters fixed.
@@ -978,6 +1072,24 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         Sgw = Omegaf*(3/(4*fs**3))*(H0/jnp.pi)**2
         return Sgw
     
+    def compute_Omega0_from_Sgw(self,fs,Sgw):
+        '''
+        Wrapper function to generically calculate the associated stochastic gravitational wave dimensionless GW energy density Omega(f)
+            for a spectral model given in terms of the PSD (S_gw)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        sgw_args (list)   : list of arguments for the relevant Omega(f) function
+        
+        Returns
+        -----------
+        Sgw (array of floats) : the resulting GW PSD
+        
+        '''
+        H0 = 2.2*10**(-18) ## Hubble constant, = 67.88 km/s/Mpc
+        Omegaf = Sgw*((3/(4*fs**3))*(H0/jnp.pi)**2)**-1
+        return Omegaf
     
     #############################
     ##          Priors         ##
@@ -1497,6 +1609,20 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         
         return [alpha, log_omega0, log_fcut, log_fscale]
+    
+    def robson19foreground_prior(self,theta):
+        
+        logA = -20*theta[0] - 30
+        
+        return [logA]
+    
+    def robson19foregroundvaried_prior(self,theta):
+        
+        alpha = 3*theta[0] - 3
+        logA = -20*theta[1] - 30
+        log_fknee = -0.5*theta[2] - 2.75
+        
+        return [alpha,logA,log_fknee]
     
     def lmcspec_prior(self,theta):
 
