@@ -206,6 +206,18 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.fixedpowerlaw_prior
             else:
                 self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                
+        elif self.spectral_model_name == 'fixedalphapowerlaw':
+            if injection:
+                raise ValueError("Fixed-value submodels are not supported for injections. Please use the 'powerlaw' submodel instead.")
+            ## ensure alpha value is provided
+            if 'alpha' not in self.fixedvals.keys():
+                raise ValueError("The 'fixedalphapowerlaw' submodel requires the following parameters to be provided to the fixedvals dict: alpha.")
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.omegaf = self.fixedpowerlaw_spectrum
+            self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
+            self.spectral_prior = self.fixedpowerlaw_prior
+        
         elif self.spectral_model_name == 'brokenpowerlaw':
             self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
             self.omegaf = self.broken_powerlaw_spectrum
@@ -867,6 +879,22 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         '''
         return 10**(log_omega0)*(fs/self.params['fref'])**(2/3)
+    
+    def fixedpowerlaw_spectrum(self,fs,log_omega0):
+        '''
+        Function to calculate a simple power law spectrum, fixed to the alpha=2/3 prediction for the stellar origin binary background.
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        log_omega0 (float)   : power law amplitude in units of log dimensionless GW energy density at f_ref
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting power law spectrum
+        
+        '''
+        return 10**(log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha'])
     
     def broken_powerlaw_spectrum(self,fs,alpha_1,log_omega0,alpha_2,log_fbreak):
         '''
