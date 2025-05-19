@@ -166,6 +166,14 @@ class fast_geometry(sph_geometry):
         
         return np.array([ [F1_ii, F12_ii, F13_ii] , [np.conj(F12_ii), F2_ii, F23_ii], [np.conj(F13_ii), np.conj(F23_ii), F3_ii] ])
     
+    def pix_masked_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii,mask):
+        '''
+        Wrapper function which just returns its inputs, as the unconvolved case doesn't integrate over the sky
+        
+        '''
+        print(F1_ii.shape)
+        return np.array([ [F1_ii[None,mask], F12_ii[None,mask], F13_ii[None,mask]] , [np.conj(F12_ii[None,mask]), F2_ii[None,mask], F23_ii[None,mask]], [np.conj(F13_ii[None,mask]), np.conj(F23_ii[None,mask]), F3_ii[None,mask]] ])
+    
     
     ########################################################################
     ## For unpacking per-frequency responses into the correct array shape ##
@@ -524,6 +532,13 @@ class fast_geometry(sph_geometry):
                     sm_map = sm_map/(np.sum(sm_map)*self.dOmega)
                     sm.response_args = sm_map
                     wrapper_args.append(sm_map)
+                elif hasattr(sm,"mask_idx"):
+                    ## unconvolved full-sky pixel response, masked to the desired pixels
+                    sm.response_shape = (3,3,f0.size, tsegmid.size, sm.mask_idx.size)
+                    print(sm.response_shape)
+                    sm.response_wrapper_func = self.pix_masked_unconvolved_asgwb_wrapper
+                    wrappers.append(self.pix_masked_unconvolved_asgwb_wrapper)
+                    wrapper_args.append(sm.mask_idx)
                 else:
                     ## unconvolved full-sky pixel response
                     sm.response_shape = (3,3,f0.size, tsegmid.size,pix_idx.size)

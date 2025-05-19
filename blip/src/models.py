@@ -730,6 +730,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## enforce pixel basis
             if params["model_basis"] != "pixel":
                 raise ValueError("Parameterized astrophysical spatial submodels are only supported in the pixel basis. (You have set basis={}.)".format(params["model_basis"]))
+            self.basis = "pixel"
             
             ## calculate pixel area
             self.dOmega = hp.pixelfunc.nside2pixarea(self.params['nside'])
@@ -2012,7 +2013,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         summ_response_mat (array) : the sky-integrated response (3 x 3 x frequency x time)
         
         '''
-        return (self.dOmega/(4*jnp.pi))*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
+        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
     
     def process_astro_skymap_injection(self,skymap):
         '''
