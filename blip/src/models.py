@@ -293,7 +293,9 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
-                self.fixedvals['alpha'] = 2/3
+                if 'alpha' not in self.fixedvals.keys():
+                    print("Warning: No low-frequency slope (alpha) specified for MWspec spectral model. Defaulting to alpha=2/3.")
+                    self.fixedvals['alpha'] = 2/3
                 self.spectral_prior = self.mwspec_prior
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
