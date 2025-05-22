@@ -399,6 +399,17 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.lmcspecbpl_prior
             else:
                 raise ValueError("lmcspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
+        elif self.spectral_model_name == 'lmcspecv2':
+            ## this is a spectral model tailored to analyses of the LMC SGWB
+            # it is a broken power law with both alphas free
+            # and astrophysically-motivated prior bounds
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.omegaf = self.broken_powerlaw_spectrum
+            self.fancyname = "LMC Spectrum"+submodel_count
+            if not injection:
+                self.spectral_prior = self.lmcspecfbpl_prior
+            else:
+                raise ValueError("lmcspecv2 is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
         elif self.spectral_model_name == 'sobbhspec':
             ## spectral model tailored to analyses of the SOBBH ISGWB
             ## a fixed alpha=2/3 power law
@@ -1726,6 +1737,37 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         delta = 0.99*theta[3] + 0.01
 
         return [log_omega0, alpha_2, log_fbreak, delta]
+    
+    def lmcspecfbpl_prior(self,theta):
+
+
+        '''
+        Prior function for a stochastic signal search with a 4-parameter broken power law spectral model.
+        Tailored for the LMC DWD SGWB spectrum. In contrast to lmcspecbpl, this variant fixes the smoothing parameter delta and allows alpha_1 to vary.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+
+        '''
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        
+        alpha_1 = 2*theta[0]
+        log_omega0 = -4*theta[1] - 7
+        alpha_2 = 4*theta[2] + alpha_1 ## must be >= alpha_1
+        log_fbreak = -1*theta[2] - 2
+
+        return [alpha_1,log_omega0,alpha_2,log_fbreak]
     
     def fixed_model_wrapper_prior(self,theta):
 
