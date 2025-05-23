@@ -1763,8 +1763,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Transform to actual priors
         
         alpha_1 = 2*theta[0]
-        log_omega0 = -4*theta[1] - 7
-        alpha_2 = 4*theta[2] + alpha_1 ## must be >= alpha_1
+        log_omega0 = -5*theta[1] - 7
+        alpha_2 = 4*theta[2]
         log_fbreak = -1*theta[2] - 2
 
         return [alpha_1,log_omega0,alpha_2,log_fbreak]
