@@ -1456,7 +1456,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         return [log_omega0]
     
-    def powerlaw_prior(self,theta):
+    def lowpowerlaw_prior(self,theta):
 
 
         '''
