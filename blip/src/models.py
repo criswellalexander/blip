@@ -421,7 +421,19 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.sobbh_powerlaw_prior
             else:
                 raise ValueError("sobbhspec is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
-                
+        elif self.spectral_model_name == 'lowpowerlaw':
+            ## spectral model to search for a low-amplitude power law
+            ## this is the power law model with a constrained upper bound on its amplitude prior
+            ## useful when performing spectral separation of an e.g., cosmological background
+            ## from the higher-amplitude SOBBH background
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$']
+            self.omegaf = self.powerlaw_spectrum
+            self.fancyname = "Power Law"+submodel_count
+            if not injection:
+                self.spectral_prior = self.lowpowerlaw_prior
+            else:
+                raise ValueError("lowpowerlaw is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
+        
         elif self.spectral_model_name == 'population':
             if not injection:
                 raise ValueError("Populations are injection-only.")
@@ -1443,6 +1455,34 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         log_omega0  = -3*theta[0] - 8
         
         return [log_omega0]
+    
+    def powerlaw_prior(self,theta):
+
+
+        '''
+        Prior function for an isotropic stochastic backgound analysis. Imposes an upper constraint on the prior to aid in spectral separation.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha and log(Omega0)
+
+        '''
+
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        alpha       =  10*theta[0] - 5
+        log_omega0  = -17*theta[1] - 9
+        
+        return [alpha, log_omega0]
     
     def broken_powerlaw_prior(self,theta):
 
