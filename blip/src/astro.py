@@ -461,30 +461,29 @@ class Galaxy_Model():
         if grid_spec=='interval':
             resolution = grid_res
             print("Generating grid with dx = dy = dz = {:0.2f} kpc".format(resolution))
-            xs = np.arange(-gal_rad,gal_rad,resolution)
-            ys = np.arange(-gal_rad,gal_rad,resolution)
-            zs = np.arange(-gal_height,gal_height,resolution)
+            xs = jnp.arange(-gal_rad,gal_rad,resolution)
+            ys = jnp.arange(-gal_rad,gal_rad,resolution)
+            zs = jnp.arange(-gal_height,gal_height,resolution)
         elif grid_spec=='npoints':
             if type(grid_res) is not int:
                 raise TypeError("If grid_spec is 'npoints', grid_res must be an integer.")
             resolution = gal_rad*2 / grid_res
             print("Generating grid with dx = dy = dz = {:0.2f} kpc".format(resolution))
-            xs = np.linspace(-gal_rad,gal_rad,grid_res)
-            ys = np.linspace(-gal_rad,gal_rad,grid_res)
-            zs = np.arange(-gal_height,gal_height,resolution)
+            xs = jnp.linspace(-gal_rad,gal_rad,grid_res)
+            ys = jnp.linspace(-gal_rad,gal_rad,grid_res)
+            zs = jnp.arange(-gal_height,gal_height,resolution)
         
         ## generate meshgrid
-        x, y, z = np.meshgrid(xs,ys,zs)
+        x, y, z = jnp.meshgrid(xs,ys,zs)
         self.z = z
-        self.r = np.sqrt(x**2 + y**2)
+        self.r = jnp.sqrt(x**2 + y**2)
         ## Use astropy.coordinates to transform from galactocentric frame to galactic (solar system barycenter) frame.
         gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
-        SSBc = gc.transform_to(cc.Galactic)
+        SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
         ## 1/D^2 with filtering to avoid nearby, presumeably resolved, DWDs
-        self.dist_adj = (np.array(SSBc.distance)>2)*(np.array(SSBc.distance))**-2
+        self.dist_adj = (jnp.array(SSBc.distance)>2)*(jnp.array(SSBc.distance))**-2
         ## make pixel grid
-        self.pixels = hp.ang2pix(self.nside,np.array(SSBc.l),np.array(SSBc.b),lonlat=True).flatten()
-        self.rGE = hp.rotator.Rotator(coord=['G','E'])
+        self.pixels = hp.ang2pix(self.nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True).flatten()
         
         ## set global (fixed) MW model parameters
         self.rho_c = 1 # some fiducial central density
@@ -528,9 +527,7 @@ class Galaxy_Model():
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
         ## Bin
-        skymap_galactic = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
-        ## Transform into the ecliptic
-        skymap = self.rGE.rotate_map_pixel(skymap_galactic)
+        skymap = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
         
         return skymap
 
@@ -556,9 +553,7 @@ class Galaxy_Model():
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
         ## Bin
-        skymap_galactic = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
-        ## Transform into the ecliptic
-        skymap = self.rGE.rotate_map_pixel(skymap_galactic)
+        skymap = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
         
         return skymap
 
@@ -604,9 +599,9 @@ def generate_galactic_foreground(rh,zh,nside):
     disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh) 
     bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
     DWD_density = disk_density + bulge_density
-    ## Use astropy.coordinates to transform from galactocentric frame to galactic (solar system barycenter) frame.
-    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
-    SSBc = gc.transform_to(cc.Galactic)
+    ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
+    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')    
+    SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
     ## Calculate GW power
     DWD_powers = DWD_density*(np.array(SSBc.distance))**-2
     ## Filter nearby grid points (cut out 2kpc sphere)
@@ -615,14 +610,11 @@ def generate_galactic_foreground(rh,zh,nside):
     DWD_unresolved_powers = DWD_powers*(np.array(SSBc.distance) > 2)
     ## Transform to healpix basis
     ## resolution is 2x analysis resolution
-    pixels = hp.ang2pix(nside,np.array(SSBc.l),np.array(SSBc.b),lonlat=True)
+#    import pdb; pdb.set_trace()
+    pixels = hp.ang2pix(nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True)
     ## Create skymap
     ## Bin
-    astro_mapG = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
-
-    ## Transform into the ecliptic
-    rGE = hp.rotator.Rotator(coord=['G','E'])
-    astro_map = rGE.rotate_map_pixel(astro_mapG)
+    astro_map = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
     
     return astro_map
 
