@@ -171,8 +171,8 @@ class fast_geometry(sph_geometry):
         Wrapper function which just returns its inputs, as the unconvolved case doesn't integrate over the sky
         
         '''
-        print(F1_ii.shape)
-        return np.array([ [F1_ii[None,mask], F12_ii[None,mask], F13_ii[None,mask]] , [np.conj(F12_ii[None,mask]), F2_ii[None,mask], F23_ii[None,mask]], [np.conj(F13_ii[None,mask]), np.conj(F23_ii[None,mask]), F3_ii[None,mask]] ])
+
+        return np.array([ [F1_ii[:,mask], F12_ii[:,mask], F13_ii[:,mask]] , [np.conj(F12_ii[:,mask]), F2_ii[:,mask], F23_ii[:,mask]], [np.conj(F13_ii[:,mask]), np.conj(F23_ii[:,mask]), F3_ii[:,mask]] ])
     
     
     ########################################################################
@@ -296,7 +296,6 @@ class fast_geometry(sph_geometry):
         F13_ii = (1/2)*(np.conj(Fplus1)*Fplus3 + np.conj(Fcross1)*Fcross3)
         F23_ii = (1/2)*(np.conj(Fplus2)*Fplus3 + np.conj(Fcross2)*Fcross3)
 
-        
         response_slices = [wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii) if arg is None else wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg) for wrapper, arg in self.wrappers]
         
         return response_slices
@@ -427,7 +426,7 @@ class fast_geometry(sph_geometry):
         # Area of each pixel in sq.radians
         self.dOmega = hp.pixelfunc.nside2pixarea(self.params['nside'])
         
-        ## let's do something like
+        ## see if any of the submodels span the full sky
         fullsky = np.any([sm.fullsky for sm in self.submodels if hasattr(sm,"fullsky")])
         
         # Make relevant array of pixel indices
@@ -438,6 +437,7 @@ class fast_geometry(sph_geometry):
         else:
             ## otherwise, make a map of everwhere on the sky where there is power across all submodels
             combined_map = np.sum(np.array([sm.skymap for sm in self.submodels if hasattr(sm,'skymap')]),axis=0)
+            
             ## Array of pixel indices where the combined map is nonzero
             pix_idx = np.flatnonzero(combined_map)
 
@@ -535,13 +535,16 @@ class fast_geometry(sph_geometry):
                 elif hasattr(sm,"mask_idx"):
                     ## unconvolved full-sky pixel response, masked to the desired pixels
                     sm.response_shape = (3,3,f0.size, tsegmid.size, sm.mask_idx.size)
-                    print(sm.response_shape)
+                    ## find a mask that matches the submodel mask to the overall response mask
+                    ## if the response is computed over the full sky, this will just be the submodel mask as a boolean array
+                    bool_mask = np.array([True if p_idx in sm.mask_idx else False for p_idx in pix_idx])
+                    sm.response_args = bool_mask
                     sm.response_wrapper_func = self.pix_masked_unconvolved_asgwb_wrapper
                     wrappers.append(self.pix_masked_unconvolved_asgwb_wrapper)
-                    wrapper_args.append(sm.mask_idx)
+                    wrapper_args.append(bool_mask)
                 else:
                     ## unconvolved full-sky pixel response
-                    sm.response_shape = (3,3,f0.size, tsegmid.size,pix_idx.size)
+                    sm.response_shape = (3,3,f0.size,tsegmid.size,pix_idx.size)
                     sm.response_wrapper_func = self.pix_unconvolved_asgwb_wrapper
                     wrappers.append(self.pix_unconvolved_asgwb_wrapper)
                     wrapper_args.append(None)
@@ -589,6 +592,7 @@ class fast_geometry(sph_geometry):
                     self.unpack_wrapper(ii,R_f)
         ## the non-parallel version has a nice progress bar :)
         else:
+            print("Computing LISA response functions for all submodels...")
             for ii in tqdm(idx):
                 R_f = self.frequency_response_wrapper(ii)
                 self.unpack_wrapper(ii,R_f)        

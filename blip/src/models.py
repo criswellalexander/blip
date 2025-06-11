@@ -768,9 +768,12 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## ensure normalization
                 self.masked_skymap = self.masked_skymap/(np.sum(self.masked_skymap)*self.dOmega)
                 
+                ## alias as needed for response function calculations
+                self.skymap = self.masked_skymap
                 
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
+                
                 
                 self.spatial_parameters = [r'$z_\mathrm{h}$']
                 self.prior = self.mw1parameter_prior
@@ -801,6 +804,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## ensure normalization
                 self.masked_skymap = self.masked_skymap/(np.sum(self.masked_skymap)*self.dOmega)
                 
+                ## alias as needed for response function calculations
+                self.skymap = self.masked_skymap
                 
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
