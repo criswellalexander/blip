@@ -35,6 +35,8 @@ setup(
         "numpyro",
         "jax"
     ],
+    extras_require={
+            "gpu":["jax[cuda12]"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
