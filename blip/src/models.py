@@ -97,7 +97,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             
         ## handle & return noise case in bespoke fashion, as it is quite different from the signal models
         if submodel_name == 'noise':
-            self.spectral_parameters = [r'$\log_{10} (Np)$'+suffix, r'$\log_{10} (Na)$'+suffix]
+            self.spectral_parameters = [r'$\log_{10} (N_p)$'+suffix, r'$\log_{10} (N_a)$'+suffix]
             self.spatial_parameters = []
             self.parameters = self.spectral_parameters
             self.Npar = 2
@@ -127,8 +127,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.cov = self.compute_cov_noise
             else:
                 ## truevals
-                self.truevals[r'$\log_{10} (Np)$'] = self.injvals['log_Np']
-                self.truevals[r'$\log_{10} (Na)$'] = self.injvals['log_Na']
+                self.truevals[r'$\log_{10} (N_p)$'] = self.injvals['log_Np']
+                self.truevals[r'$\log_{10} (N_a)$'] = self.injvals['log_Na']
                 ## save the frozen noise spectra
                 self.frozen_spectra = self.instr_noise_spectrum(self.fs,self.f0,Np=10**self.injvals['log_Np'],Na=10**self.injvals['log_Na'])
             

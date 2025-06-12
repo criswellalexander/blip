@@ -40,7 +40,7 @@ To run, call
 
 This will (by default) inject and recover a power law isotropic SGWB, with LISA detector noise at the level specified in the LISA proposal (Amaro-Seoane et al., 2017), for 3 months of data.
 
-Two other helpful parameter files are also included: params_test.ini, which has settings ideal for (more) rapid code testing, and params_simple.ini, which only includes the bare bones, minimal necessary settings for BLIP to run.
+Two other helpful parameter files are also included: params_test.ini, which has settings ideal for (more) rapid code testing, and params_simple.ini, which only includes the bare bones, minimal necessary settings for BLIP to run. Any new params file named params_run_*.ini will be automatically ignored by git.
 
 Posterior plots will be automatically created in the specified output directory, along with some diagnostics. All statistical model information is saved in Model.pickle; all information used to perform the injection is likewise saved in Injection.pickle. The posterior samples are saved to post_samples.txt.
 
