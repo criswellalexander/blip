@@ -697,9 +697,9 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
     ## set matplotlib plotting style
     plot_params = {'font.family':'STIXGeneral',
                    'mathtext.fontset':'stix',
-                   'xtick.labelsize': 18,
-                   'ytick.labelsize': 18,
-                   'axes.labelsize': 18,
+                   'xtick.labelsize': 20,
+                   'ytick.labelsize': 20,
+                   'axes.labelsize': 24,
                    'axes.titlesize':20
                    }
     matplotlib.rcParams.update(plot_params)
@@ -761,8 +761,8 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         ## make corner plots
         fig = plt.figure(figsize=(16,16))
         N_bins = 35
-        corner.corner(post[:,subset_filt_i], labels=parameter_subset_i, levels=[0.393,0.864], bins=N_bins,
-                      fig=fig, show_titles=False, plot_density=True, max_n_ticks=3, color=histcolor)#, label_kwargs={'fontsize':18})
+        corner.corner(post[:,subset_filt_i], levels=[0.393,0.864], bins=N_bins,
+                      fig=fig, show_titles=False, plot_density=True, max_n_ticks=3, color=histcolor)#, labelpad=0.1)
         if knowTrue:
             truths=[truevals[par] if par in truevals.keys() else None for par in parameter_subset_i]
             corner.overplot_lines(fig, truths, ls='--', c='k', alpha=0.7)
@@ -791,42 +791,84 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
             
             
             err =  [sum_ax[2] - sum_ax[1], sum_ax[1]- sum_ax[0]]
-    
+            
+            ## ensure appropriate precision in labels
+            if np.abs(err[0]) <= 1e-3 and np.abs(err[1]) <= 1e-3:
+                mean_prec = '{0:.4f}'
+            elif np.abs(err[0]) <= 1e-2 and np.abs(err[1]) <= 1e-2:
+                mean_prec = '{0:.3f}'
+            elif np.abs(err[0]) <= 1e-1 and np.abs(err[1]) <= 1e-1:
+                mean_prec = '{0:.2f}'
+            else:
+                mean_prec = '{0:.1f}'
+            
+            if np.abs(err[0]) <= 1e-3:
+                err[0] = '{0:.4f}'.format(err[0])
+            elif np.abs(err[0]) <= 1e-2:
+                err[0] = '{0:.3f}'.format(err[0])
+            elif np.abs(err[0]) <= 1e-1:
+                err[0] = '{0:.2f}'.format(err[0])
+            else:
+                err[0] = '{0:.1f}'.format(err[0])
+        
+            if np.abs(err[1]) <= 1e-3:
+                err[1] = '{0:.4f}'.format(err[1])
+            elif np.abs(err[1]) <= 1e-2:
+                err[1] = '{0:.3f}'.format(err[1])
+            elif np.abs(err[1]) <= 1e-1:
+                err[1] = '{0:.2f}'.format(err[1])
+            else:
+                err[1] = '{0:.1f}'.format(err[1])
+            
+            
             if np.abs(sum_ax[1]) <= 1e-3:
-                mean_def = '{0:.3e}'.format(sum_ax[1])
+                mean_def = mean_prec.format(sum_ax[1])
                 eidx = mean_def.find('e')
                 base = float(mean_def[0:eidx])
                 exponent = int(mean_def[eidx+1:])
                 mean_form = str(base)
                 exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
             else:
-                mean_form = '{0:.3f}'.format(sum_ax[1])
+                mean_form = mean_prec.format(sum_ax[1])
                 exp_form = ''
-    
-            if np.abs(err[0]) <= 1e-2:
-                err[0] = '{0:.4f}'.format(err[0])
-            else:
-                err[0] = '{0:.2f}'.format(err[0])
-    
-            if np.abs(err[1]) <= 1e-2:
-                err[1] = '{0:.4f}'.format(err[1])
-            else:
-                err[1] = '{0:.2f}'.format(err[1])
+            
+            
+            
+#            if np.abs(sum_ax[1]) <= 1e-3:
+#                mean_def = '{0:.3e}'.format(sum_ax[1])
+#                eidx = mean_def.find('e')
+#                base = float(mean_def[0:eidx])
+#                exponent = int(mean_def[eidx+1:])
+#                mean_form = str(base)
+#                exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
+#            else:
+#                mean_form = '{0:.3f}'.format(sum_ax[1])
+#                exp_form = ''
+#    
+#            if np.abs(err[0]) <= 1e-2:
+#                err[0] = '{0:.4f}'.format(err[0])
+#            else:
+#                err[0] = '{0:.2f}'.format(err[0])
+#    
+#            if np.abs(err[1]) <= 1e-2:
+#                err[1] = '{0:.4f}'.format(err[1])
+#            else:
+#                err[1] = '{0:.2f}'.format(err[1])
     
             label =  parameter_subset_i[ii][:-1] + ' = ' + mean_form + '^{+' + err[0] + '}_{-' + err[1] + '}'+exp_form+'$'
     
-            ax.set_title(label, {'fontsize':18}, loc='left')
+            ax.set_title(label, pad=10, loc='left')
             
             ## chainconsumer has probably messed up the labels on the sides , so reset them
             ## only need to do this for the first column and last row
-            if ii in [0,1]:
-                ax_left = axes[ii,0]
-                ax_left.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_left.set_ylabel(parameter_subset_i[ii])
-        
-                ax_bottom = axes[-1,ii]
-                ax_bottom.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_bottom.set_xlabel(parameter_subset_i[ii])
+#            if ii in [0,1]:
+#                ax_left = axes[ii,0]
+#                ax_left.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+#                ax_left.set_ylabel(parameter_subset_i[ii])
+#        
+#                ax_bottom = axes[-1,ii]
+#                ax_bottom.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+#                ax_bottom.set_xlabel(parameter_subset_i[ii])
             
             ## set the labels identical for all axes
             axes[ii,0].set_ylabel(parameter_subset_i[ii])
