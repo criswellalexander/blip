@@ -585,6 +585,7 @@ class fast_geometry(sph_geometry):
         
         ## the parallel implementation still has a lot of overhead due to needing to pickle functions and passing them to the threads
         ## unclear if the effects of this will be noticible at scale
+        print("Computing LISA response functionss...")
         if self.parallel:
             with Pool(self.nthreads) as pool:
                 result = pool.map(self.frequency_response_wrapper,idx)
@@ -592,7 +593,6 @@ class fast_geometry(sph_geometry):
                     self.unpack_wrapper(ii,R_f)
         ## the non-parallel version has a nice progress bar :)
         else:
-            print("Computing LISA response functions for all submodels...")
             for ii in tqdm(idx):
                 R_f = self.frequency_response_wrapper(ii)
                 self.unpack_wrapper(ii,R_f)        
