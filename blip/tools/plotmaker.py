@@ -8,7 +8,6 @@ from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.legend_handler import HandlerTuple
 from matplotlib.ticker import ScalarFormatter
-from chainconsumer import ChainConsumer
 import corner
 from scipy.interpolate import interp1d
 import healpy as hp
@@ -831,44 +830,10 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
             else:
                 mean_form = mean_prec.format(sum_ax[1])
                 exp_form = ''
-            
-            
-            
-#            if np.abs(sum_ax[1]) <= 1e-3:
-#                mean_def = '{0:.3e}'.format(sum_ax[1])
-#                eidx = mean_def.find('e')
-#                base = float(mean_def[0:eidx])
-#                exponent = int(mean_def[eidx+1:])
-#                mean_form = str(base)
-#                exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
-#            else:
-#                mean_form = '{0:.3f}'.format(sum_ax[1])
-#                exp_form = ''
-#    
-#            if np.abs(err[0]) <= 1e-2:
-#                err[0] = '{0:.4f}'.format(err[0])
-#            else:
-#                err[0] = '{0:.2f}'.format(err[0])
-#    
-#            if np.abs(err[1]) <= 1e-2:
-#                err[1] = '{0:.4f}'.format(err[1])
-#            else:
-#                err[1] = '{0:.2f}'.format(err[1])
     
             label =  parameter_subset_i[ii][:-1] + ' = ' + mean_form + '^{+' + err[0] + '}_{-' + err[1] + '}'+exp_form+'$'
     
             ax.set_title(label, pad=10, loc='left')
-            
-            ## chainconsumer has probably messed up the labels on the sides , so reset them
-            ## only need to do this for the first column and last row
-#            if ii in [0,1]:
-#                ax_left = axes[ii,0]
-#                ax_left.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-#                ax_left.set_ylabel(parameter_subset_i[ii])
-#        
-#                ax_bottom = axes[-1,ii]
-#                ax_bottom.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-#                ax_bottom.set_xlabel(parameter_subset_i[ii])
             
             ## set the labels identical for all axes
             axes[ii,0].set_ylabel(parameter_subset_i[ii])
@@ -880,104 +845,15 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         
         ## Save posterior
         if saveto is not None:
-            fig_path_base = (saveto + '/corner_corners_' + subset_name_i).replace('//','/')
+            fig_path_base = (saveto + '/corners_' + subset_name_i).replace('//','/')
         else:
-            fig_path_base = (params['out_dir'] + '/corner_corners_' + subset_name_i).replace('//','/')
+            fig_path_base = (params['out_dir'] + '/corners_' + subset_name_i).replace('//','/')
         
         for ext in ['.png','.pdf']:
             plt.savefig(fig_path_base+ext, dpi=200, bbox_inches='tight')
             print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
         plt.close()
         
-        
-        
-        
-        
-        ## Make chainconsumer corner plots
-        cc = ChainConsumer()
-        cc.add_chain(post[:,subset_filt_i], parameters=parameter_subset_i)
-        cc.configure(smooth=False, kde=False, max_ticks=2, sigmas=np.array([1, 2]), label_font_size=18, tick_font_size=18, \
-#                summary=False, statistics="max_central", spacing=2, summary_area=0.95, cloud=False, bins=1.2)
-                summary=False, statistics="mean", spacing=2, summary_area=0.95, cloud=False, bins=1.2)
-        cc.configure_truth(color='g', ls='--', alpha=0.7)
-    
-        if knowTrue:
-            fig = cc.plotter.plot(figsize=(16, 16), truth=truevals)
-        else:
-            fig = cc.plotter.plot(figsize=(16, 16))
-
-        ## make axis labels to be parameter summaries
-        sum_data = cc.analysis.get_summary()
-        axes = np.array(fig.axes).reshape((npar, npar))
-    
-        # Adjust axis labels
-        for ii in range(npar):
-            ax = axes[ii, ii]
-    
-            # get the right summary for the parameter ii
-            sum_ax = sum_data[parameter_subset_i[ii]]
-            err =  [sum_ax[2] - sum_ax[1], sum_ax[1]- sum_ax[0]]
-    
-            if np.abs(sum_ax[1]) <= 1e-3:
-                mean_def = '{0:.3e}'.format(sum_ax[1])
-                eidx = mean_def.find('e')
-                base = float(mean_def[0:eidx])
-                exponent = int(mean_def[eidx+1:])
-                mean_form = str(base)
-                exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
-            else:
-                mean_form = '{0:.3f}'.format(sum_ax[1])
-                exp_form = ''
-    
-            if np.abs(err[0]) <= 1e-2:
-                err[0] = '{0:.4f}'.format(err[0])
-            else:
-                err[0] = '{0:.2f}'.format(err[0])
-    
-            if np.abs(err[1]) <= 1e-2:
-                err[1] = '{0:.4f}'.format(err[1])
-            else:
-                err[1] = '{0:.2f}'.format(err[1])
-    
-            label =  parameter_subset_i[ii][:-1] + ' = ' + mean_form + '^{+' + err[0] + '}_{-' + err[1] + '}'+exp_form+'$'
-    
-            ax.set_title(label, {'fontsize':18}, loc='left')
-            
-            ## chainconsumer has probably messed up the labels on the sides , so reset them
-            ## only need to do this for the first column and last row
-            if ii in [0,1]:
-                ax_left = axes[ii,0]
-                ax_left.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_left.set_ylabel(parameter_subset_i[ii])
-        
-                ax_bottom = axes[-1,ii]
-                ax_bottom.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_bottom.set_xlabel(parameter_subset_i[ii])
-            
-            ## set the labels identical for all axes
-            axes[ii,0].set_ylabel(parameter_subset_i[ii],fontsize=18)
-            axes[-1,ii].set_xlabel(parameter_subset_i[ii],fontsize=18)
-            
-        ## plot aesthetics
-        fig.align_ylabels()
-        fig.align_xlabels()
-        
-        ## Save posterior
-        if saveto is not None:
-            fig_path_base = (saveto + '/cc_corners_' + subset_name_i).replace('//','/')
-        else:
-            fig_path_base = (params['out_dir'] + '/cc_corners_' + subset_name_i).replace('//','/')
-        
-        for ext in ['.png','.pdf']:
-            plt.savefig(fig_path_base+ext, dpi=200, bbox_inches='tight')
-            print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
-        plt.close()
-        
-        if not params['load_data']:    
-            # plot walkers
-            fig = cc.plotter.plot_walks(truth=truevals, convolve=10)
-            plt.savefig(params['out_dir'] + 'plotwalks.png', dpi=200)
-            plt.close()
 
 
 if __name__ == '__main__':

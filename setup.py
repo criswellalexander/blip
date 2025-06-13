@@ -27,7 +27,7 @@ setup(
         "scipy",
         "astropy",
         "pandas",
-        "chainconsumer==0.34.0",
+        "corner",
         "sympy",
         "legwork",
         "dill",
