@@ -12,8 +12,15 @@ from blip.tools.plotmaker import cornermaker
 from blip.tools.plotmaker import mapmaker
 from blip.tools.plotmaker import fitmaker
 import matplotlib.pyplot as plt
+import matplotlib
 from multiprocessing import Pool
 import time
+
+## set default fonts
+plot_params = {'font.family':'STIXGeneral',
+                   'mathtext.fontset':'stix'
+                   }
+matplotlib.rcParams.update(plot_params)
 
 class LISA(LISAdata, Model):
 
@@ -514,7 +521,14 @@ def blip(paramsfile='params.ini',resume=False):
     params['load_data'] = int(config.get("params", "load_data", fallback=0))
     params['datatype'] = str(config.get("params", "datatype", fallback='strain'))
     params['datafile']  = str(config.get("params", "datafile", fallback=None))
-    params['fref'] = float(config.get("params", "fref", fallback=25))
+    ## default fref is 1mHz
+    ## until we update the prior structure, using other reference frequencies may lead to unintended behavior in the prior bounds
+    ## in the new prior structure, the default astrophysical prior bounds should scale with fref
+    params['fref'] = float(config.get("params", "fref", fallback=0.001))
+    if params['fref'] != 0.001:
+        print("Warning: reference frequency set to a value other than 1 mHz (fref={} Hz).".format(params['fref']))
+        print("This may lead to unexpected prior behavior, as the prior bounds are based on a reference frequency of 1 mHz!")
+    
     
     params['model'] = str(config.get("params", "model"))
     

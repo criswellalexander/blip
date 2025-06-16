@@ -188,24 +188,24 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         ## assignment of spectrum
         if self.spectral_model_name == 'powerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.powerlaw_spectrum
             self.fancyname = "Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.powerlaw_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
         elif self.spectral_model_name == 'twothirdspowerlaw':
             ## it may be worth implementing a more general fixed powerlaw model
             ## but this suffices for investigating the effects of the stellar-origin binary background
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
             self.fancyname = r'$\alpha=2/3$'+" Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.fixedpowerlaw_prior
             else:
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 
         elif self.spectral_model_name == 'fixedalphapowerlaw':
             if injection:
@@ -213,25 +213,25 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## ensure alpha value is provided
             if 'alpha' not in self.fixedvals.keys():
                 raise ValueError("The 'fixedalphapowerlaw' submodel requires the following parameters to be provided to the fixedvals dict: alpha.")
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.fixedpowerlaw_spectrum
             self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
             self.spectral_prior = self.fixedpowerlaw_prior
         
         elif self.spectral_model_name == 'brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.broken_powerlaw_prior
             else:
                 self.truevals[r'$\alpha_1$'] = self.injvals['alpha1']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
                 self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
         
         elif self.spectral_model_name == 'fixedalpha1brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
@@ -240,13 +240,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     raise KeyError("Fixed-alpha_1 broken power law spectral model selected, but no low-frequeny slope parameter (alpha_1) was provided to the fixedvals dict.")
             else:
                 self.fixedvals[r'$\alpha_1$'] = self.injvals['alpha1']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
                 self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
                 self.truevals[r'$\delta$'] = self.injvals['delta']
         
         elif self.spectral_model_name == 'truncatedpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "Truncated Power Law"+submodel_count
             if not injection:
@@ -256,21 +256,21 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.truncated_powerlaw_3par_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
                 self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = np.log10(4e-4)
                 ## this is a bit hacky but oh well. Solves an issue that comes up if you use the 3par TPL for an injection.
                 self.fixedvals = {'log_fscale':np.log10(4e-4)}
         
         elif self.spectral_model_name == 'truncatedpowerlaw4par':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "4-Parameter Truncated Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.truncated_powerlaw_4par_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
                 self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = self.injvals['log_fscale']
                 
@@ -289,7 +289,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the MW foreground
             # it is a truncated power law with alpha = 2/3 and fscale = 4e-4
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -304,7 +304,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 3-parameter truncated power law with astrophysically-motivated prior bounds
             # fscale parameter is fixed
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -318,7 +318,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         elif self.spectral_model_name == 'mwspec4par':
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 4-parameter truncated power law with astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -391,7 +391,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with alpha_1 = 2/3
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']#,r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']#,r'$\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1delta_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -403,7 +403,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with both alphas free
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -414,7 +414,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## spectral model tailored to analyses of the SOBBH ISGWB
             ## a fixed alpha=2/3 power law
             ## with astrophysical priors
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
             self.fancyname = "SOBBH Power law"+submodel_count
             if not injection:
@@ -426,7 +426,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is the power law model with a constrained upper bound on its amplitude prior
             ## useful when performing spectral separation of an e.g., cosmological background
             ## from the higher-amplitude SOBBH background
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.powerlaw_spectrum
             self.fancyname = "Power Law"+submodel_count
             if not injection:
@@ -1404,7 +1404,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha       =  10*theta[0] - 5
-        log_omega0  = -26*theta[1] + 12
+        log_omega0  = -30*theta[1] + 9
         
         return [alpha, log_omega0]
     
@@ -1431,7 +1431,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -26*theta[0] + 12
+        log_omega0  = -30*theta[0] + 9
         
         return [log_omega0]
     
@@ -1458,7 +1458,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -3*theta[0] - 8
+        log_omega0  = -3*theta[0] - 11
         
         return [log_omega0]
     
@@ -1486,7 +1486,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha       =  10*theta[0] - 5
-        log_omega0  = -17*theta[1] - 9
+        log_omega0  = -10*theta[1] - 14
         
         return [alpha, log_omega0]
     
@@ -1506,14 +1506,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha_1, log(Omega_0), alpha_2, and log(f_break).
+            theta with each element rescaled. The elements are  interpreted as alpha_1, log(Omega_ref), alpha_2, and log(f_break).
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha_1 = 10*theta[0] - 4
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1]
         alpha_2 = 40*theta[2]
         log_fbreak = -2*theta[3] - 2
 
@@ -1536,14 +1536,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -10*theta[0] - 4
+        log_omega0 = -22*theta[0]
         alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -2*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
@@ -1567,14 +1567,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -10*theta[0] - 4
+        log_omega0 = -22*theta[0]
         alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -2*theta[2] - 2
 
@@ -1596,14 +1596,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 10*theta[0] - 5
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1] + 5
         log_fcut = -2*theta[2] - 2
         log_fscale = -2*theta[3] - 2
         
@@ -1626,14 +1626,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 10*theta[0] - 5
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1] + 5
         log_fcut = -2*theta[2] - 2
         
 
@@ -1655,13 +1655,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as log(Omega_0) and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as log(Omega_ref) and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -22*theta[0] + 8
+        log_omega0 = -22*theta[0] + 5
         log_fcut = -2*theta[1] - 2
         
 
@@ -1685,13 +1685,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -2*theta[0] - 4
+        log_omega0 = -2*theta[0] - 7
         log_fcut = -0.7*theta[1] - 2.4
         log_fscale = -2*theta[2] - 2
         
@@ -1716,14 +1716,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 3
+        log_omega0 = -3*theta[1] - 6
         log_fcut = -0.7*theta[2] - 2.4
         
         
@@ -1747,14 +1747,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 3
+        log_omega0 = -3*theta[1] - 6
         log_fcut = -0.7*theta[2] - 2.4
         log_fscale = -2*theta[3] - 2
         
@@ -1791,13 +1791,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -4*theta[0] - 7
+        log_omega0 = -3*theta[0] - 9
         log_fcut = -1*theta[1] - 2
         log_fscale = -1*theta[2] - 3
         
@@ -1821,14 +1821,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -4*theta[0] - 7
+        log_omega0 = -3*theta[0] - 9
         alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
@@ -1852,14 +1852,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -4*theta[0] - 7
+        log_omega0 = -3*theta[0] - 9
         alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
 
@@ -1882,7 +1882,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
@@ -1890,7 +1890,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Transform to actual priors
         
         alpha_1 = 2*theta[0]
-        log_omega0 = -5*theta[1] - 7
+        log_omega0 = -3*theta[1] - 9
         alpha_2 = 4*theta[2]
         log_fbreak = -1*theta[2] - 2
 
