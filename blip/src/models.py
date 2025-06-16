@@ -5,10 +5,11 @@ import healpy as hp
 import logging
 import os, shutil, pickle
 import time
-from multiprocessing import Pool
-from blip.src.utils import log_manager, catch_duplicates, gen_suffixes, catch_color_duplicates
+#from multiprocessing import Pool
+from blip.src.utils import log_manager, catch_duplicates, gen_suffixes, catch_color_duplicates, get_robson19_shape_pars_from_tobs
 from blip.src.geometry import geometry
-from blip.src.sph_geometry import sph_geometry
+#from blip.src.sph_geometry import sph_geometry
+from blip.src.fast_geometry import fast_geometry
 from blip.src.clebschGordan import clebschGordan
 from blip.src.astro import Population
 from blip.src.instrNoise import instrNoise
@@ -21,7 +22,7 @@ import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
 
-class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
+class submodel(fast_geometry,clebschGordan,instrNoise):
     '''
     Modular class that can represent either an injection or an analysis model. Will have different attributes depending on use case.
     
@@ -96,7 +97,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             
         ## handle & return noise case in bespoke fashion, as it is quite different from the signal models
         if submodel_name == 'noise':
-            self.spectral_parameters = [r'$\log_{10} (Np)$'+suffix, r'$\log_{10} (Na)$'+suffix]
+            self.spectral_parameters = [r'$\log_{10} (N_p)$'+suffix, r'$\log_{10} (N_a)$'+suffix]
             self.spatial_parameters = []
             self.parameters = self.spectral_parameters
             self.Npar = 2
@@ -126,8 +127,8 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 self.cov = self.compute_cov_noise
             else:
                 ## truevals
-                self.truevals[r'$\log_{10} (Np)$'] = self.injvals['log_Np']
-                self.truevals[r'$\log_{10} (Na)$'] = self.injvals['log_Na']
+                self.truevals[r'$\log_{10} (N_p)$'] = self.injvals['log_Np']
+                self.truevals[r'$\log_{10} (N_a)$'] = self.injvals['log_Na']
                 ## save the frozen noise spectra
                 self.frozen_spectra = self.instr_noise_spectrum(self.fs,self.f0,Np=10**self.injvals['log_Np'],Na=10**self.injvals['log_Na'])
             
@@ -187,38 +188,50 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
 
         ## assignment of spectrum
         if self.spectral_model_name == 'powerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.powerlaw_spectrum
             self.fancyname = "Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.powerlaw_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
         elif self.spectral_model_name == 'twothirdspowerlaw':
             ## it may be worth implementing a more general fixed powerlaw model
             ## but this suffices for investigating the effects of the stellar-origin binary background
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
             self.fancyname = r'$\alpha=2/3$'+" Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.fixedpowerlaw_prior
             else:
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
+                
+        elif self.spectral_model_name == 'fixedalphapowerlaw':
+            if injection:
+                raise ValueError("Fixed-value submodels are not supported for injections. Please use the 'powerlaw' submodel instead.")
+            ## ensure alpha value is provided
+            if 'alpha' not in self.fixedvals.keys():
+                raise ValueError("The 'fixedalphapowerlaw' submodel requires the following parameters to be provided to the fixedvals dict: alpha.")
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+            self.omegaf = self.fixedpowerlaw_spectrum
+            self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
+            self.spectral_prior = self.fixedpowerlaw_prior
+        
         elif self.spectral_model_name == 'brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.broken_powerlaw_prior
             else:
                 self.truevals[r'$\alpha_1$'] = self.injvals['alpha1']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
                 self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
         
         elif self.spectral_model_name == 'fixedalpha1brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
@@ -226,13 +239,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 if 'alpha_1' not in self.fixedvals.keys():
                     raise KeyError("Fixed-alpha_1 broken power law spectral model selected, but no low-frequeny slope parameter (alpha_1) was provided to the fixedvals dict.")
             else:
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.fixedvals[r'$\alpha_1$'] = self.injvals['alpha1']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
                 self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
                 self.truevals[r'$\delta$'] = self.injvals['delta']
         
         elif self.spectral_model_name == 'truncatedpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "Truncated Power Law"+submodel_count
             if not injection:
@@ -242,21 +256,21 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 self.spectral_prior = self.truncated_powerlaw_3par_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
                 self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = np.log10(4e-4)
                 ## this is a bit hacky but oh well. Solves an issue that comes up if you use the 3par TPL for an injection.
                 self.fixedvals = {'log_fscale':np.log10(4e-4)}
         
         elif self.spectral_model_name == 'truncatedpowerlaw4par':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "4-Parameter Truncated Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.truncated_powerlaw_4par_prior
             else:
                 self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_0)$'] = self.injvals['log_omega0']
+                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
                 self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = self.injvals['log_fscale']
                 
@@ -275,11 +289,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the MW foreground
             # it is a truncated power law with alpha = 2/3 and fscale = 4e-4
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
-                self.fixedvals['alpha'] = 2/3
+                if 'alpha' not in self.fixedvals.keys():
+                    print("Warning: No low-frequency slope (alpha) specified for MWspec spectral model. Defaulting to alpha=2/3.")
+                    self.fixedvals['alpha'] = 2/3
                 self.spectral_prior = self.mwspec_prior
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
@@ -288,7 +304,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 3-parameter truncated power law with astrophysically-motivated prior bounds
             # fscale parameter is fixed
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -302,7 +318,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         elif self.spectral_model_name == 'mwspec4par':
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 4-parameter truncated power law with astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_0)$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -310,30 +326,114 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
         
+        elif self.spectral_model_name == 'robson19foreground':
+            ## implementation of the Robson+19 analytic foreground model.
+            ## this is a variation of the tanh-truncated foreground, but with
+            ## additional, time-dependent shape parameters due to subtraction of resolved systems
+            ## for the BLIP implementation, it has been recast into Omega_GW space
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10}A$']
+            self.omegaf = self.robson19_foreground_spectrum
+            self.fancyname = "MW Foreground"+submodel_count
+            if not injection:
+                self.spectral_prior = self.robson19foreground_prior
+                if 'T_obs' not in self.fixedvals.keys():
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    self.fixedvals |= shape_fixedvals
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
+                    self.fixedvals |= shape_fixedvals
+            else:
+                ## define truevals
+                if 'T_obs' not in self.injvals.keys():
+                    raise ValueError("When simulated data with the Robson+19 foreground spectral model, you must specify T_obs as a trueval.")
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.injvals['T_obs'])
+                    self.truevals |= shape_fixedvals
+                
+                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                self.fixedvals = self.truevals
+            
+        elif self.spectral_model_name == 'robson19foregroundvaried':
+            ## implementation of the Robson+19 analytic foreground model.
+            ## this is a variation of the tanh-truncated foreground, but with
+            ## additional, time-dependent shape parameters due to subtraction of resolved systems
+            ## for the BLIP implementation, it has been recast into Omega_GW space
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$',r'$\log_{10}A$',r'$\log_{10}f_{\rm knee}$']
+            self.omegaf = self.robson19_foreground_varied_spectrum
+            self.fancyname = "MW Foreground"+submodel_count
+            if not injection:
+                self.spectral_prior = self.robson19foregroundvaried_prior
+                if 'T_obs' not in self.fixedvals.keys():
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    self.fixedvals |= shape_fixedvals
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
+                    self.fixedvals |= shape_fixedvals
+            else:
+                ## define truevals
+                if 'T_obs' not in self.truevals.keys():
+                    raise ValueError("When simulated data with the Robson+19 foreground spectral model, you must specify T_obs as a trueval.")
+                else:
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.truevals['T_obs'])
+                    self.truevals |= shape_fixedvals
+            
+                self.truevals[r'$\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$A$'] = self.injvals['A']
+                if 'fknee' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = jnp.log10(self.injvals['fknee'])
+                elif 'log_fknee' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = self.injvals['log_fknee']
+                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                self.fixedvals = self.truevals
+            
+        
         elif self.spectral_model_name == 'lmcspec':
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with alpha_1 = 2/3
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
-            self.omegaf = self.broken_powerlaw_fixed_a1_spectrum
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']#,r'$\delta$']
+            self.omegaf = self.broken_powerlaw_fixed_a1delta_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
                 self.fixedvals['alpha_1'] = 2/3
-                self.spectral_prior = self.lmcspecbpl_prior
+                self.spectral_prior = self.lmcspecbplad_prior
             else:
                 raise ValueError("lmcspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
+        elif self.spectral_model_name == 'lmcspecv2':
+            ## this is a spectral model tailored to analyses of the LMC SGWB
+            # it is a broken power law with both alphas free
+            # and astrophysically-motivated prior bounds
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.omegaf = self.broken_powerlaw_spectrum
+            self.fancyname = "LMC Spectrum"+submodel_count
+            if not injection:
+                self.spectral_prior = self.lmcspecfbpl_prior
+            else:
+                raise ValueError("lmcspecv2 is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
         elif self.spectral_model_name == 'sobbhspec':
             ## spectral model tailored to analyses of the SOBBH ISGWB
             ## a fixed alpha=2/3 power law
             ## with astrophysical priors
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_0)$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
             self.fancyname = "SOBBH Power law"+submodel_count
             if not injection:
                 self.spectral_prior = self.sobbh_powerlaw_prior
             else:
                 raise ValueError("sobbhspec is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
-                
+        elif self.spectral_model_name == 'lowpowerlaw':
+            ## spectral model to search for a low-amplitude power law
+            ## this is the power law model with a constrained upper bound on its amplitude prior
+            ## useful when performing spectral separation of an e.g., cosmological background
+            ## from the higher-amplitude SOBBH background
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+            self.omegaf = self.powerlaw_spectrum
+            self.fancyname = "Power Law"+submodel_count
+            if not injection:
+                self.spectral_prior = self.lowpowerlaw_prior
+            else:
+                raise ValueError("lowpowerlaw is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
+        
         elif self.spectral_model_name == 'population':
             if not injection:
                 raise ValueError("Populations are injection-only.")
@@ -356,44 +456,20 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         
         ## This is the isotropic spatial model, and has no additional parameters.
         if self.spatial_model_name == 'isgwb':
-            if self.params['tdi_lev'] == 'michelson':
-                if parallel_response:
-                    self.response = self.isgwb_mich_response_parallel
-                    self.response_non_parallel = self.isgwb_mich_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.isgwb_mich_response
-            elif self.params['tdi_lev'] == 'xyz':
-                if parallel_response:
-                    self.response = self.isgwb_xyz_response_parallel
-                    self.response_non_parallel = self.isgwb_xyz_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.isgwb_xyz_response
-                
-            elif self.params['tdi_lev'] == 'aet':
-                if parallel_response:
-                    self.response = self.isgwb_aet_response_parallel
-                    self.response_non_parallel = self.isgwb_aet_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.isgwb_aet_response
-            else:
-                raise ValueError("Invalid specification of tdi_lev. Can be 'michelson', 'xyz', or 'aet'.")
-            
-            ## compute response matrix
-            self.response_mat = self.response(f0,tsegmid,**response_kwargs)
-            
             ## plotting stuff
             self.fancyname = "Isotropic "+self.fancyname
-            self.subscript = "_{\mathrm{I}}"
+            self.subscript = r"_{\mathrm{I}}"
             self.color='darkorange'
             self.has_map = False
+            self.fullsky = True
 
             if not injection:
                 ## prior transform
                 self.prior = self.isotropic_prior
                 self.cov = self.compute_cov_isgwb
             else:
-                ## create a wrapper b/c isotropic and anisotropic injection responses are different
-                self.inj_response_mat = self.response_mat
+                ## Tell the submodel how to handle the injection response matrix when it's computed later on
+                self.convolve_inj_response_mat = self.wrapper_convolve_inj_response_mat
         
         ## This is the spherical harmonic spatial model. It is the workhorse of the spherical harmonic anisotropic analysis.
         ## It can also be used to perform arbitrary injections in the spherical harmonic basis via direct specification of the blms.
@@ -401,7 +477,9 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             
             if injection:
                 if self.inj['inj_basis'] == 'pixel':
-                    raise ValueError("Only astrophysical injections are supported in the pixel basis. Spherical harmonic injections must use the spherical harmonic basis.")
+                    print("Warning: the injection basis has been specified as the pixel basis (inj_basis=pixel), but this is a spherical harmonic injection. \
+                          Spherical harmonic injections must use the spherical harmonic basis (inj_basis=sph).\
+                          Proceeding with the spherical harmonic basis for this component; other components will continue to use the pixel basis.")
                 self.lmax = self.inj['inj_lmax']
             else:
                 self.lmax = self.params['lmax']
@@ -410,35 +488,12 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             self.almax = 2*self.lmax
             response_kwargs['set_almax'] = self.almax
             
-            if self.params['tdi_lev']=='michelson':
-                if parallel_response:
-                    self.response = self.asgwb_mich_response_parallel
-                    self.response_non_parallel = self.asgwb_mich_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.asgwb_mich_response  
-            elif self.params['tdi_lev']=='xyz':
-                if parallel_response:
-                    self.response = self.asgwb_xyz_response_parallel
-                    self.response_non_parallel = self.asgwb_xyz_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.asgwb_xyz_response
-            elif self.params['tdi_lev']=='aet':
-                if parallel_response:
-                    self.response = self.asgwb_aet_response_parallel
-                    self.response_non_parallel = self.asgwb_aet_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.asgwb_aet_response
-            else:
-                raise ValueError("Invalid specification of tdi_lev. Can be 'michelson', 'xyz', or 'aet'.")
-            
-            ## compute response matrix
-            self.response_mat = self.response(f0,tsegmid,**response_kwargs)
-            
             ## plotting stuff
             self.fancyname = "Anisotropic "+self.fancyname
-            self.subscript = "_{\mathrm{A}}"
+            self.subscript = r"_{\mathrm{A}}"
             self.color = 'teal'
             self.has_map = True
+            self.fullsky = True
             self.basis = 'sph'
             
             # add the blms
@@ -477,16 +532,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 
                 ## get alms
                 self.alms_inj = np.array(self.compute_skymap_alms(self.injvals['blms']).tolist())
-#                import pdb; pdb.set_trace()
                 ## get sph basis skymap
                 self.sph_skymap =  hp.alm2map(self.alms_inj[0:hp.Alm.getsize(self.almax)],self.params['nside'])
-                ## get response integrated over the Ylms
-                self.summ_response_mat = self.compute_summed_response(self.alms_inj)
-                ## create a wrapper b/c isotropic and anisotropic injection responses are different
-                self.inj_response_mat = self.summ_response_mat
+                ## Tell the submodel how to handle the injection response matrix when it's computed later on
+                self.convolve_inj_response_mat = self.sph_convolve_inj_response_mat
         
         ## Handle all the static (non-inferred) astrophysical spatial distributions together due to their similarities
-        elif self.spatial_model_name in ['galaxy','dwarfgalaxy','lmc','pointsource','twopoints','pointsources','population','fixedgalaxy','hotpixel','pixiso','popmap']:
+        elif self.spatial_model_name in ['galaxy','dwarfgalaxy','lmc','pointsource','twopoints','pointsources','population','fixedgalaxy','fixedlmc','hotpixel','pixiso','popmap']:
             
             ## the astrophysical spatial models are mostly injection-only, with some exceptions.
             if self.spatial_model_name in ['galaxy','dwarfgalaxy','lmc','pointsource','twopoints','population'] and not injection:
@@ -494,7 +546,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             
             self.has_map = True
             
-            if (Injection and inj['inj_basis']=='pixel') or (not Injection and params['model_basis']=='pixel'):
+            if (injection and inj['inj_basis']=='pixel') or (not injection and params['model_basis']=='pixel'):
                 basis = 'pixel'
             else:
                 basis = 'sph'
@@ -506,58 +558,15 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 self.lmax = self.inj['inj_lmax']
                 self.almax = 2*self.lmax
                 response_kwargs['set_almax'] = self.almax
-                if self.params['tdi_lev']=='michelson':
-                    if parallel_response:
-                        self.response = self.asgwb_mich_response_parallel
-                        self.response_non_parallel = self.asgwb_mich_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.asgwb_mich_response  
-                elif self.params['tdi_lev']=='xyz':
-                    if parallel_response:
-                        self.response = self.asgwb_xyz_response_parallel
-                        self.response_non_parallel = self.asgwb_xyz_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.asgwb_xyz_response
-                elif self.params['tdi_lev']=='aet':
-                    if parallel_response:
-                        self.response = self.asgwb_aet_response_parallel
-                        self.response_non_parallel = self.asgwb_aet_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.asgwb_aet_response
-                else:
-                    raise ValueError("Invalid specification of tdi_lev. Can be 'michelson', 'xyz', or 'aet'.")
-            elif basis == 'pixel':
-                if self.params['tdi_lev']=='michelson':
-                    if parallel_response:
-                        self.response = self.pixel_mich_response_parallel
-                        self.response_non_parallel = self.pixel_mich_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.pixel_mich_response     
-                elif self.params['tdi_lev']=='xyz':
-                    if parallel_response:
-                        self.response = self.pixel_xyz_response_parallel
-                        self.response_non_parallel = self.pixel_xyz_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.pixel_xyz_response
-                elif self.params['tdi_lev']=='aet':
-                    if parallel_response:
-                        self.response = self.pixel_aet_response_parallel
-                        self.response_non_parallel = self.pixel_aet_response ## useful for data frequencies, external regen
-                    else:
-                        self.response = self.pixel_aet_response
-                else:
-                    raise ValueError("Invalid specification of tdi_lev. Can be 'michelson', 'xyz', or 'aet'.")
-            
-            
+
             ## model-specific quantities
-            ## injection-only models
             if self.spatial_model_name == 'galaxy':
                 ## store the high-level MW truevals for the hierarchical analysis
                 self.truevals[r'$r_{\mathrm{h}}$'] = self.injvals['rh']
                 self.truevals[r'$z_{\mathrm{h}}$'] = self.injvals['zh']
                 ## plotting stuff
                 self.fancyname = "Galactic Foreground"
-                self.subscript = "_{\mathrm{G}}"
+                self.subscript = r"_{\mathrm{G}}"
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(self.injvals['rh'],self.injvals['zh'],self.params['nside'])
@@ -567,21 +576,21 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             elif self.spatial_model_name == 'lmc':
                 ## plotting stuff
                 self.fancyname = "LMC"
-                self.subscript = "_{\mathrm{LMC}}"
+                self.subscript = r"_{\mathrm{LMC}}"
                 self.color = 'darkmagenta'
                 ## generate skymap
                 self.skymap = astro.generate_sdg(self.params['nside']) ## sdg defaults are for the LMC
             elif self.spatial_model_name == 'dwarfgalaxy':
                 ## plotting stuff
                 self.fancyname = "Dwarf Galaxy"+submodel_count
-                self.subscript = "_{\mathrm{DG}}"
+                self.subscript = r"_{\mathrm{DG}}"
                 self.color = 'maroon'
                 ## generate skymap
                 self.skymap = astro.generate_sdg(self.params['nside'],ra=self.injvals['sdg_RA'], dec=self.injvals['sdg_DEC'], D=self.injvals['sdg_dist'], r=self.injvals['sdg_rad'], N=self.injvals['sdg_N'])
             elif self.spatial_model_name == 'pointsource':
                 ## plotting stuff
                 self.fancyname = "Point Source"+submodel_count
-                self.subscript = "_{\mathrm{1P}}"
+                self.subscript = r"_{\mathrm{1P}}"
                 self.color = 'forestgreen'
                 ## generate skymap
                 ## some flexibility, can be defined in either (RA,DEC) or (theta,phi)
@@ -597,7 +606,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             elif self.spatial_model_name == 'pointsources':
                 ## plotting stuff
                 self.fancyname = "Multiple Point Sources"+submodel_count
-                self.subscript = "_{\mathrm{NP}}"
+                self.subscript = r"_{\mathrm{NP}}"
                 self.color = 'forestgreen'
                 ## generate skymap
                 ## some flexibility, can be defined in either (RA,DEC) or (theta,phi)
@@ -614,7 +623,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## revisit this when I have duplicates sorted, maybe unnecessary (could just have 2x point source injection components)
                 ## plotting stuff
                 self.fancyname = "Two Point Sources"+submodel_count
-                self.subscript = "_{\mathrm{2P}}"
+                self.subscript = r"_{\mathrm{2P}}"
                 self.color = 'gold'
                 ## generate skymap
                 self.skymap = astro.generate_two_point_source(self.injvals['theta_1'],self.injvals['phi_1'],self.injvals['theta_2'],self.injvals['phi_2'],self.params['nside'])
@@ -622,7 +631,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## flag the fact that we have a population skymap
                 self.skypop = True
                 ## plotting stuff
-                self.subscript = "_{\mathrm{P}}"
+                self.subscript = r"_{\mathrm{P}}"
                 self.color = 'midnightblue'
                 if self.spectral_model_name != 'population':
                     ## generate population if still needed
@@ -648,7 +657,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                     zh = 0.3
                 ## plotting stuff
                 self.fancyname = "Galactic Foreground"
-                self.subscript = "_{\mathrm{G}}"
+                self.subscript = r"_{\mathrm{G}}"
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(rh,zh,self.params['nside'])
@@ -656,6 +665,18 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
                 self.skymap = self.skymap * mask
                 self.fixed_map = True
+            elif self.spatial_model_name == 'fixedlmc':
+                ## plotting stuff
+                self.fancyname = "LMC"
+                self.subscript = r"_{\mathrm{LMC}}"
+                self.color = 'darkmagenta'
+                ## generate skymap
+                self.skymap = astro.generate_sdg(self.params['nside']) ## sdg defaults are for the LMC
+                ## mask to only the first four scale heights
+                mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
+                self.skymap = self.skymap * mask
+                self.fixed_map = True
+            
             elif self.spatial_model_name == 'hotpixel':
                 ## get the fixed values
                 ## some flexibility, can be defined in either (RA,DEC) or (theta,phi)
@@ -669,21 +690,21 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                     raise ValueError("Using hotpixel spatial model but either no coordinates were provided to the fixedvals dict or invalid notation was used.")
                 ## plotting stuff
                 self.fancyname = "Point Source"
-                self.subscript = "_{\mathrm{1P}}"
+                self.subscript = r"_{\mathrm{1P}}"
                 self.color = 'forestgreen'
                 self.skymap = astro.generate_point_source(coord1,coord2,self.params['nside'],convention=convention,pad=True)
                 self.fixed_map = True
             
             elif self.spatial_model_name == 'pixiso':
                 self.fancyname = "Pixel Isotropic"
-                self.subscript = "_{\mathrm{PI}}"
+                self.subscript = r"_{\mathrm{PI}}"
                 self.color = 'forestgreen'
                 self.skymap = np.ones(hp.nside2npix(self.params['nside']))
                 self.fixed_map = True
             
             elif self.spatial_model_name == 'popmap':
                 self.fancyname = "Population Skymap"
-                self.subscript = "_{\mathrm{PM}}"
+                self.subscript = r"_{\mathrm{PM}}"
                 self.color = 'mediumorchid'
                 popkey = self.fixedvals['pop_id']
                 popdict = self.inj['popdict'][popkey]
@@ -698,20 +719,18 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             else:
                 raise ValueError("Astrophysical submodel type not found. Did you add a new model to the list at the top of this section?")
             
-            ## compute response matrix
+            ## set skymap
             if basis == 'pixel':
                 response_kwargs['skymap_inj'] = self.skymap #/(np.sum(self.skymap)*hp.nside2pixarea(self.params['nside']))
-            self.response_mat = self.response(f0,tsegmid,**response_kwargs)
+
             
-            ## process skymap
+            ## process skymap, indicate how to compute the response functions later
             if not injection:
                 if basis == 'sph':
                     self.process_astro_skymap_model(self.skymap)
                     self.prior = self.fixedsky_prior
                     self.cov = self.compute_cov_fixed_asgwb
                 elif basis=='pixel':
-#                    self.process_astro_skymap_pixel_model(self.skymap)
-                    self.summ_response_mat = self.response_mat
                     self.prior = self.fixedsky_prior
                     self.cov = self.compute_cov_fixed_asgwb
                 else:
@@ -719,16 +738,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             else:
                 if basis == 'sph':
                     self.process_astro_skymap_injection(self.skymap)
+                    ## Tell the submodel how to handle the injection response matrix when it's computed later on
+                    self.convolve_inj_response_mat = self.sph_convolve_inj_response_mat
                 elif basis == 'pixel':
-                    self.inj_response_mat = self.response_mat
+                    ## Tell the submodel how to handle the injection response matrix when it's computed later on
+                    self.convolve_inj_response_mat = self.wrapper_convolve_inj_response_mat
                 else:
                     raise TypeError("Basis was not defined, or was incorrectly defined.")
-            
-            
-#            ## compute response matrix
-#            self.response_mat = self.response(f0,tsegmid,**response_kwargs)
-#            if basis == 'pixel':
-#                self.inj_response_mat = self.response_mat
+
 
         ## Parameterized astrophysical spatial distributions.
         ## Distinct from the fixedsky/injection-only models as we need spatial inference infrastructure
@@ -738,6 +755,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             ## enforce pixel basis
             if params["model_basis"] != "pixel":
                 raise ValueError("Parameterized astrophysical spatial submodels are only supported in the pixel basis. (You have set basis={}.)".format(params["model_basis"]))
+            self.basis = "pixel"
             
             ## calculate pixel area
             self.dOmega = hp.pixelfunc.nside2pixarea(self.params['nside'])
@@ -745,27 +763,8 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             ## set starting index for spatial model parameters
             self.spatial_start = len(self.spectral_parameters)
             
-            ## set response functions
-            if self.params['tdi_lev']=='michelson':
-                if parallel_response:
-                    self.response = self.unconvolved_pixel_mich_response_parallel
-                    self.response_non_parallel = self.unconvolved_pixel_mich_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.unconvolved_pixel_mich_response
-            elif self.params['tdi_lev']=='xyz':
-                if parallel_response:
-                    self.response = self.unconvolved_pixel_xyz_response_parallel
-                    self.response_non_parallel = self.unconvolved_pixel_xyz_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.unconvolved_pixel_xyz_response
-            elif self.params['tdi_lev']=='aet':
-                if parallel_response:
-                    self.response = self.unconvolved_pixel_aet_response_parallel
-                    self.response_non_parallel = self.unconvolved_pixel_aet_response ## useful for data frequencies, external regen
-                else:
-                    self.response = self.unconvolved_pixel_aet_response
-            else:
-                raise ValueError("Invalid specification of tdi_lev. Can be 'michelson', 'xyz', or 'aet'.")
+            ## we won't convolve this response function with anything ahead of time, so set the wrapper
+            self.convolve_inj_response_mat = self.wrapper_convolve_inj_response_mat
             
             ## 2-parameter Milky Way model
             if self.spatial_model_name == '1parametermw':
@@ -773,7 +772,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## only infers the vertical scale height z_h
                 ## plotting stuff
                 self.fancyname = "1-Parameter Milky Way"
-                self.subscript = "_{\mathrm{G}}"
+                self.subscript = r"_{\mathrm{G}}"
                 self.color = 'mediumorchid'
                 self.has_map = True
                 self.fixed_map = False
@@ -794,9 +793,12 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## ensure normalization
                 self.masked_skymap = self.masked_skymap/(np.sum(self.masked_skymap)*self.dOmega)
                 
+                ## alias as needed for response function calculations
+                self.skymap = self.masked_skymap
                 
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
+                
                 
                 self.spatial_parameters = [r'$z_\mathrm{h}$']
                 self.prior = self.mw1parameter_prior
@@ -806,7 +808,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## model to infer the Milky Way spatial distribution, using a basic 2-parameter model of the Galaxy
                 ## plotting stuff
                 self.fancyname = "2-Parameter Milky Way"
-                self.subscript = "_{\mathrm{G}}"
+                self.subscript = r"_{\mathrm{G}}"
                 self.color = 'mediumorchid'
                 self.has_map = True
                 self.fixed_map = False
@@ -827,6 +829,8 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
                 ## ensure normalization
                 self.masked_skymap = self.masked_skymap/(np.sum(self.masked_skymap)*self.dOmega)
                 
+                ## alias as needed for response function calculations
+                self.skymap = self.masked_skymap
                 
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
@@ -837,8 +841,6 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
             
             else:
                 raise ValueError("Parameterized astrophysical spatial submodel type not found. Did you add a new model to the list at the top of this section?")
-            
-            self.response_mat = self.response(f0,tsegmid,**response_kwargs)
             
         else:
             raise ValueError("Invalid specification of spatial model name ('{}').".format(self.spatial_model_name))
@@ -909,6 +911,22 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         '''
         return 10**(log_omega0)*(fs/self.params['fref'])**(2/3)
     
+    def fixedpowerlaw_spectrum(self,fs,log_omega0):
+        '''
+        Function to calculate a simple power law spectrum, fixed to the alpha=2/3 prediction for the stellar origin binary background.
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        log_omega0 (float)   : power law amplitude in units of log dimensionless GW energy density at f_ref
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting power law spectrum
+        
+        '''
+        return 10**(log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha'])
+    
     def broken_powerlaw_spectrum(self,fs,alpha_1,log_omega0,alpha_2,log_fbreak):
         '''
         Function to calculate a broken power law spectrum.
@@ -947,6 +965,27 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         spectrum (array of floats) : the resulting broken power law spectrum
         
         '''
+        fbreak = 10**log_fbreak
+        norm = (fbreak/self.params['fref'])**self.fixedvals['alpha_1'] ## this normalizes the broken powerlaw such that its first leg matches the equivalent standard power law
+        return norm * (10**log_omega0)*(fs/fbreak)**(self.fixedvals['alpha_1']) * ((1+(fs/fbreak)**(1/delta)))**((self.fixedvals['alpha_1']-alpha_2)*delta)
+    
+    def broken_powerlaw_fixed_a1delta_spectrum(self,fs,log_omega0,alpha_2,log_fbreak):
+        '''
+        Function to calculate a broken power law spectrum, with a fixed low-frequency slope and turnover scale.
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        log_omega0 (float)   : power law amplitude of the first power law in units of log dimensionless GW energy density at f_ref
+        alpha_2 (float)      : slope of the second power law
+        log_fbreak (float)   : log of the break frequency ("knee") in Hz
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting broken power law spectrum
+        
+        '''
+        delta = 0.1
         fbreak = 10**log_fbreak
         norm = (fbreak/self.params['fref'])**self.fixedvals['alpha_1'] ## this normalizes the broken powerlaw such that its first leg matches the equivalent standard power law
         return norm * (10**log_omega0)*(fs/fbreak)**(self.fixedvals['alpha_1']) * ((1+(fs/fbreak)**(1/delta)))**((self.fixedvals['alpha_1']-alpha_2)*delta)
@@ -1031,6 +1070,64 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha']) * (1+jnp.tanh((fcut-fs)/fscale))
     
+    def robson19_foreground_spectrum(self,fs,logA):
+        '''
+        Function to calculate an analytical spectrum for the Galactic foreground of the form given in Robson et al. (2019) (arXiv:1803.01944)
+        
+        NOTE: this is given in terms of PSD amplitude A, as opposed to the usual units used in BLIP (dimensionless GW energy density)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        A (float)   : power law amplitude of the power law in units of **PSD** at f_ref (if left un-truncated)
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting analytical foreground spectrum
+        
+        '''
+        
+        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        beta_shape = self.fixedvals[r'$\beta$']
+        kappa = self.fixedvals[r'$\kappa$']
+        gamma = self.fixedvals[r'$\gamma$']
+        log_fknee = jnp.log10(self.fixedvals[r'$f_{\rm knee}$'])
+        
+        
+        Sgw = 10**logA * (fs/self.params['fref'])**(-7/3) * jnp.exp(-fs**alpha_shape + beta_shape*fs*jnp.sin(kappa*fs)) * (1 + jnp.tanh(gamma*(10**log_fknee - fs)))
+        ## defined in terms of Sgw, so need to convert to be in terms of Omegaf
+        return self.compute_Omega0_from_Sgw(fs,Sgw)
+    
+    def robson19_foreground_varied_spectrum(self,fs,alpha,logA,log_fknee):
+        '''
+        Function to calculate an analytical spectrum for the Galactic foreground of the form given in Robson et al. (2019) (arXiv:1803.01944)
+        
+        This version also varies the slope alpha and break ("knee") frequency f_knee.
+        
+        NOTE: this is given in terms of PSD amplitude A, as opposed to the usual units used in BLIP (dimensionless GW energy density)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        A (float)   : power law amplitude of the power law in units of **PSD** at f_ref (if left un-truncated)
+        alpha (float) : power law slope above the truncation
+        log_fknee (float) : Log10 of the break ("knee") frequency.
+        
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting analytical foreground spectrum
+        
+        '''
+        
+        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        beta_shape = self.fixedvals[r'$\beta$']
+        kappa = self.fixedvals[r'$\kappa$']
+        gamma = self.fixedvals[r'$\gamma$']
+        
+        Sgw = 10**logA * (fs/self.params['fref'])**(alpha) * jnp.exp(-fs**alpha_shape + beta_shape*fs*jnp.sin(kappa*fs)) * (1 + jnp.tanh(gamma*(10**log_fknee - fs)))
+        ## defined in terms of Sgw, so need to convert to be in terms of Omegaf
+        return self.compute_Omega0_from_Sgw(fs,Sgw)
+    
     def fixed_truncated_powerlaw_spectrum(self,fs):
         '''
         Function to calculate a tanh-truncated power law spectrum with all parameters fixed.
@@ -1068,6 +1165,24 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         Sgw = Omegaf*(3/(4*fs**3))*(H0/jnp.pi)**2
         return Sgw
     
+    def compute_Omega0_from_Sgw(self,fs,Sgw):
+        '''
+        Wrapper function to generically calculate the associated stochastic gravitational wave dimensionless GW energy density Omega(f)
+            for a spectral model given in terms of the PSD (S_gw)
+        
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        sgw_args (list)   : list of arguments for the relevant Omega(f) function
+        
+        Returns
+        -----------
+        Sgw (array of floats) : the resulting GW PSD
+        
+        '''
+        H0 = 2.2*10**(-18) ## Hubble constant, = 67.88 km/s/Mpc
+        Omegaf = Sgw*((3/(4*fs**3))*(H0/jnp.pi)**2)**-1
+        return Omegaf
     
     #############################
     ##          Priors         ##
@@ -1289,7 +1404,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha       =  10*theta[0] - 5
-        log_omega0  = -26*theta[1] + 12
+        log_omega0  = -30*theta[1] + 9
         
         return [alpha, log_omega0]
     
@@ -1316,7 +1431,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -26*theta[0] + 12
+        log_omega0  = -30*theta[0] + 9
         
         return [log_omega0]
     
@@ -1343,9 +1458,37 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -3*theta[0] - 8
+        log_omega0  = -3*theta[0] - 11
         
         return [log_omega0]
+    
+    def lowpowerlaw_prior(self,theta):
+
+
+        '''
+        Prior function for an isotropic stochastic backgound analysis. Imposes an upper constraint on the prior to aid in spectral separation.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha and log(Omega0)
+
+        '''
+
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        alpha       =  10*theta[0] - 5
+        log_omega0  = -10*theta[1] - 14
+        
+        return [alpha, log_omega0]
     
     def broken_powerlaw_prior(self,theta):
 
@@ -1363,14 +1506,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha_1, log(Omega_0), alpha_2, and log(f_break).
+            theta with each element rescaled. The elements are  interpreted as alpha_1, log(Omega_ref), alpha_2, and log(f_break).
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha_1 = 10*theta[0] - 4
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1]
         alpha_2 = 40*theta[2]
         log_fbreak = -2*theta[3] - 2
 
@@ -1393,19 +1536,49 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -10*theta[0] - 4
+        log_omega0 = -22*theta[0]
         alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -2*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
 
         return [log_omega0, alpha_2, log_fbreak, delta]
+    
+    def broken_powerlaw_fixed_a1delta_prior(self,theta):
+
+
+        '''
+        Prior function for a stochastic signal search with a 4-parameter broken power law spectral model.
+        Fixed low-frequency slope.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
+
+        '''
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        
+        log_omega0 = -22*theta[0]
+        alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
+        log_fbreak = -2*theta[2] - 2
+
+        return [log_omega0, alpha_2, log_fbreak]
     
     def truncated_powerlaw_4par_prior(self,theta):
 
@@ -1423,14 +1596,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 10*theta[0] - 5
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1] + 5
         log_fcut = -2*theta[2] - 2
         log_fscale = -2*theta[3] - 2
         
@@ -1453,14 +1626,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 10*theta[0] - 5
-        log_omega0 = -22*theta[1] + 8
+        log_omega0 = -22*theta[1] + 5
         log_fcut = -2*theta[2] - 2
         
 
@@ -1482,13 +1655,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as log(Omega_0) and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as log(Omega_ref) and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -22*theta[0] + 8
+        log_omega0 = -22*theta[0] + 5
         log_fcut = -2*theta[1] - 2
         
 
@@ -1512,13 +1685,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), and log(f_cut)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), and log(f_cut)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -2*theta[0] - 4
+        log_omega0 = -2*theta[0] - 7
         log_fcut = -0.7*theta[1] - 2.4
         log_fscale = -2*theta[2] - 2
         
@@ -1543,14 +1716,14 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 3
+        log_omega0 = -3*theta[1] - 6
         log_fcut = -0.7*theta[2] - 2.4
         
         
@@ -1574,19 +1747,33 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), and log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), and log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 3
+        log_omega0 = -3*theta[1] - 6
         log_fcut = -0.7*theta[2] - 2.4
         log_fscale = -2*theta[3] - 2
         
         
         return [alpha, log_omega0, log_fcut, log_fscale]
+    
+    def robson19foreground_prior(self,theta):
+        
+        logA = -20*theta[0] - 30
+        
+        return [logA]
+    
+    def robson19foregroundvaried_prior(self,theta):
+        
+        alpha = 3*theta[0] - 3
+        logA = -20*theta[1] - 30
+        log_fknee = -0.5*theta[2] - 2.75
+        
+        return [alpha,logA,log_fknee]
     
     def lmcspec_prior(self,theta):
 
@@ -1604,13 +1791,13 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -4*theta[0] - 8
+        log_omega0 = -3*theta[0] - 9
         log_fcut = -1*theta[1] - 2
         log_fscale = -1*theta[2] - 3
         
@@ -1634,19 +1821,80 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         ---------
 
         theta   :   float
-            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_0), log(f_cut), log(f_scale)
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
 
         '''
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -4*theta[0] - 8
-        alpha_2 = 2*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
+        log_omega0 = -3*theta[0] - 9
+        alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
 
         return [log_omega0, alpha_2, log_fbreak, delta]
+    
+    def lmcspecbplad_prior(self,theta):
+
+
+        '''
+        Prior function for a stochastic signal search with a 3-parameter broken power law spectral model.
+        Tailored for the LMC DWD SGWB spectrum.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
+
+        '''
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        
+        log_omega0 = -3*theta[0] - 9
+        alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
+        log_fbreak = -1*theta[2] - 2
+
+        return [log_omega0, alpha_2, log_fbreak]
+    
+    def lmcspecfbpl_prior(self,theta):
+
+
+        '''
+        Prior function for a stochastic signal search with a 4-parameter broken power law spectral model.
+        Tailored for the LMC DWD SGWB spectrum. In contrast to lmcspecbpl, this variant fixes the smoothing parameter delta and allows alpha_1 to vary.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha, log(Omega_ref), log(f_cut), log(f_scale)
+
+        '''
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        
+        alpha_1 = 2*theta[0]
+        log_omega0 = -3*theta[1] - 9
+        alpha_2 = 4*theta[2]
+        log_fbreak = -1*theta[2] - 2
+
+        return [alpha_1,log_omega0,alpha_2,log_fbreak]
     
     def fixed_model_wrapper_prior(self,theta):
 
@@ -1840,6 +2088,53 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
     ##   Skymap and Response Calculations   ##
     ##########################################
     
+    def wrapper_convolve_inj_response_mat(self,fdata_flag=False):
+        '''
+        A wrapper function for the ISGWB and pixel basis cases, the skymaps are convolved implicitly when calculating the response.
+        
+        Arguments
+        -----------
+        fdata_flag (bool) : Whether to compute the convolution for injection frequencies (False, default) or data frequencies (True).
+        
+        Returns
+        -----------
+        (none)
+        
+        '''
+        
+        # create a wrapper b/c isotropic and anisotropic injection responses are handled differently w.r.t. skymap convolution
+        if not fdata_flag:
+            self.inj_response_mat = self.response_mat
+            self.summ_response_mat = self.response_mat
+        else:
+            self.fdata_response_mat = self.unconvolved_fdata_response_mat
+        
+        return
+    
+    def sph_convolve_inj_response_mat(self,fdata_flag=False):
+        '''
+        Function to convolve the sph response matrix with an injected spherical harmonic skymap.
+        
+        Arguments
+        -----------
+        fdata_flag (bool) : Whether to compute the convolution for injection frequencies (False, default) or data frequencies (True).
+        
+        Returns
+        -----------
+        (none)
+        
+        '''
+        
+        if not fdata_flag:
+            ## get response integrated over the Ylms
+            self.summ_response_mat = self.compute_summed_response(self.alms_inj)
+            ## create a wrapper b/c isotropic and anisotropic injection responses are different
+            self.inj_response_mat = self.summ_response_mat
+        else:
+            self.fdata_response_mat = jnp.einsum('ijklm,m', self.unconvolved_fdata_response_mat, self.alms_inj)
+        
+        return
+    
     def compute_skymap_alms(self,blm_params):
         '''
         Function to compute the anisotropic skymap a_lms from the blm parameters.
@@ -1888,7 +2183,7 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         summ_response_mat (array) : the sky-integrated response (3 x 3 x frequency x time)
         
         '''
-        return (self.dOmega/(4*jnp.pi))*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
+        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
     
     def process_astro_skymap_injection(self,skymap):
         '''
@@ -1917,9 +2212,9 @@ class submodel(geometry,sph_geometry,clebschGordan,instrNoise):
         self.alms_inj = self.alms_inj/(self.alms_inj[0] * np.sqrt(4*np.pi))
         self.sph_skymap = hp.alm2map(self.alms_inj[0:hp.Alm.getsize(self.almax)],self.params['nside'])
         ## get response integrated over the Ylms
-        self.summ_response_mat = self.compute_summed_response(self.alms_inj)
-        ## create a wrapper b/c isotropic and anisotropic injection responses are different
-        self.inj_response_mat = self.summ_response_mat
+#        self.summ_response_mat = self.compute_summed_response(self.alms_inj)
+#        ## create a wrapper b/c isotropic and anisotropic injection responses are different
+#        self.inj_response_mat = self.summ_response_mat
         
         return
     
@@ -2114,6 +2409,13 @@ class Model():
         self.parameters['spatial'] = spatial_parameters
         self.parameters['all'] = all_parameters
         
+        ## Having initialized all the components, now compute the LISA response functions
+        t1 = time.time()
+        fast_rx = fast_geometry(self.params)
+        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
+        t2 = time.time()
+        print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+        
         ## update colors as needed
         catch_color_duplicates(self)
         
@@ -2253,42 +2555,31 @@ class Injection():#geometry,sph_geometry):
         self.truevals = {}
         
 
-        ## activate multithreading if desired
-        if inj['parallel_inj'] and inj['inj_nthread']>1:
-            name_args = [(cmn,suff) for cmn, suff in zip(self.component_names,suffixes)]
-            print("Building all injection components in parallel. Number of threads: {}.".format(inj['inj_nthread']))
-            with Pool(inj['inj_nthread']) as pool:
-                component_list = list(pool.imap(self.add_component,name_args))
-            for cm, component_name in zip(component_list,self.component_names):
-                self.components[component_name] = cm
-                self.truevals[component_name] = cm.truevals
-                if cm.has_map:
-                    self.plot_skymaps(component_name)
-        elif inj['parallel_inj'] and inj['response_nthread']>1:
-            for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
-                print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-                t1 = time.time()
-                cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix,parallel_response=True)
-                t2 = time.time()
-                print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
-                self.components[component_name] = cm
-                self.truevals[component_name] = cm.truevals
-
-                if cm.has_map:
-                    self.plot_skymaps(component_name)
+        ## step through and build components
+        ## parallelization has been depreciated now that the response function calculations are handled elsewhere
+        for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
+            print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
+            t1 = time.time()
+            cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
+            t2 = time.time()
+            print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
+            self.components[component_name] = cm
+            self.truevals[component_name] = cm.truevals
+    
+            if cm.has_map:
+                self.plot_skymaps(component_name)
+        
+        ## Having initialized all the components, now compute the LISA response functions
+        if self.inj['parallel_inj'] and self.inj['response_nthread']>1:
+            rx_nthreads = self.inj['response_nthread']
         else:
-            for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
-                print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-                t1 = time.time()
-                cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
-                t2 = time.time()
-                print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
-                self.components[component_name] = cm
-                self.truevals[component_name] = cm.truevals
-
-                if cm.has_map:
-                    self.plot_skymaps(component_name)
-            
+            rx_nthreads = 1
+        t1 = time.time()
+        fast_rx = fast_geometry(self.params,nthreads=rx_nthreads)
+        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.components[cmn] for cmn in self.sgwb_component_names],self.params['tdi_lev'])
+        t2 = time.time()
+        print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
+        
         ## initialize default plotting lower ylim
         self.plot_ylim = None
         
@@ -2588,7 +2879,7 @@ class Injection():#geometry,sph_geometry):
             
             ## tell healpy to shush
             with log_manager(logging.ERROR):
-                hp.mollview(Omegamap_pix, coord=coord, title='Injected pixel map $\Omega (f = 1 mHz)$', unit="$\\Omega(f= 1mHz)$", cmap=self.params['colormap'])
+                hp.mollview(Omegamap_pix, coord=coord, title=r'Injected pixel map $\Omega (f = 1 mHz)$', unit=r"$\Omega(f= 1mHz)$", cmap=self.params['colormap'])
                 hp.graticule()
             
             if save_figures:
@@ -2605,7 +2896,7 @@ class Injection():#geometry,sph_geometry):
             Omegamap_inj = Omega_1mHz * cm.sph_skymap
             ## tell healpy to shush
             with log_manager(logging.ERROR):
-                hp.mollview(Omegamap_inj, coord=coord, title='Injected angular distribution map $\Omega (f = 1 mHz)$', unit="$\\Omega(f= 1mHz)$", cmap=self.params['colormap'])
+                hp.mollview(Omegamap_inj, coord=coord, title=r'Injected angular distribution map $\Omega (f = 1 mHz)$', unit=r"$\Omega(f= 1mHz)$", cmap=self.params['colormap'])
                 hp.graticule()
             
             if save_figures:

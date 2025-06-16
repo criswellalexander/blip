@@ -1,19 +1,18 @@
 #!/usr/bin/env python
 
-import os
-
 from setuptools import setup
 
 with open("README.md", "r") as rme:
     long_description = rme.read()
 
 setup(
-    name="BLiP",
-    description="A bayesian pipeline for detecting stochastic backgrounds with LISA.",
+    name="blip",
+    description="A Bayesian inference package for characterizing stochastic backgrounds and foregrounds with LISA.",
     long_description=long_description,
     url="https://github.com/sharanbngr/blip",
-    author="Sharan Banagiri and others",
+    author="Sharan Banagiri, Alexander Criswell, and others",
     author_email="sharan.banagiri@gmail.com",
+    version="2.0.2",
     license="MIT",
     packages=["blip",
         "blip.src",
@@ -22,23 +21,32 @@ setup(
     package_dir={"blip":"blip"},
     scripts=["blip/run_blip"],
     install_requires=[
-        "numpy",
+        "numpy>=2.0",
         "matplotlib",
-        "healpy==1.15.2",
-        "chainconsumer",
+        "healpy",
+        "scipy",
+        "astropy",
+        "pandas",
+        "corner",
         "sympy",
         "legwork",
         "dill",
         "dynesty",
         "emcee",
-        "nessai"
+        "numpyro",
+        "jax"
     ],
+    extras_require={
+            "gpu":["jax[cuda12]"]},
     classifiers=[
+        "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires="==3.10",
+    python_requires=">=3.10",
 )
 
 

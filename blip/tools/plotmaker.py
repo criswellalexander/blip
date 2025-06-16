@@ -8,7 +8,8 @@ from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.legend_handler import HandlerTuple
 from matplotlib.ticker import ScalarFormatter
-from chainconsumer import ChainConsumer
+import corner
+from scipy.interpolate import interp1d
 import healpy as hp
 from healpy import Alm
 from astropy import units as u
@@ -50,6 +51,11 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
         print("Called mapmaker but none of the recovery models have a non-isotropic spatial model. Skipping...")
         return
     
+    plot_params = {'font.family':'STIXGeneral',
+                   'mathtext.fontset':'stix'
+                   }
+    matplotlib.rcParams.update(plot_params)
+    
     ## load or create plot_data dict
     if plot_data_path is None:
         plot_data_path = params['out_dir']+'/plot_data.pickle'
@@ -74,8 +80,8 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
     plot_data['map_data']['coord'] = coord
     
     # handling titles, units
-    post_base_kwargs = {'title':'Marginalized posterior skymap of $\\Omega(f= 1mHz)$','unit':"$\\Omega(f= 1mHz)$"}
-    med_base_kwargs = {'title':'Median skymap of $\\Omega(f= 1mHz)$','unit':"$\\Omega(f= 1mHz)$"}
+    post_base_kwargs = {'title':'Marginalized posterior skymap of $\\Omega(f= 1 \\mathrm{mHz})$','unit':"$\\Omega(f= 1\\mathrm{mHz})$"}
+    med_base_kwargs = {'title':'Median skymap of $\\Omega(f= 1 \\mathrm{mHz})$','unit':"$\\Omega(f= 1 \\mathrm{mHz})$"}
     
     ## join user-set values to the base settings, overriding when specified
     post_map_kwargs = post_base_kwargs | post_map_kwargs
@@ -316,9 +322,15 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             print("Warning: Not using externally generated data, but no Injection object has been provided to the fitmaker. Returning without making plots...")
             return
     
+    ## set matplotlib plotting style
+    plot_params = {'font.family':'STIXGeneral',
+                   'mathtext.fontset':'stix'
+                   }
+    matplotlib.rcParams.update(plot_params)
+    
     ## build the default plot kwargs
-    default_kwargs = {'figsize':None,'dpi':150,'color_dict':{},'title':None,'title_fontsize':None,
-                      'xlabel':'Frequency [Hz]','xlabel_fontsize':None,'ylabel':'PSD [1/Hz]','ylabel_fontsize':None,
+    default_kwargs = {'figsize':None,'dpi':150,'color_dict':{},'title':None,'title_fontsize':16,
+                      'xlabel':'Frequency [Hz]','xlabel_fontsize':12,'ylabel':'PSD [1/Hz]','ylabel_fontsize':12,
                       'xmin':None,'xmax':None,'ymin':None,'ymax':None}
     ## update astro kwargs
     astro_kwargs = {'title':"Fit vs. Injection (Astrophysical)"} | astro_kwargs
@@ -349,21 +361,21 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
     if params['load_data']:
         notation_legend_elements = [Line2D([0], [0], color='k', ls='-'),
                                     Patch(color='k',alpha=0.25)]
-        notation_legend_labels = ['Median Fit','$95\%$ C.I.']
+        notation_legend_labels = ['Median Fit',r'$95\%$ C.I.']
         notation_handler_map = {}
         notation_handlelength = None
     elif 'population' in Injection.component_names:
         notation_legend_elements = [(Line2D([0], [0], color='k', ls='--'),Line2D([0], [0], color=Injection.components['population'].color,ls='-',lw=0.75,alpha=0.8)),
                                     Line2D([0], [0], color='k', ls='-'),
                                     Patch(color='k',alpha=0.25)]
-        notation_legend_labels = ['Injection','Median Fit','$95\%$ C.I.']
+        notation_legend_labels = ['Injection','Median Fit',r'$95\%$ C.I.']
         notation_handler_map = {tuple: HandlerTuple(ndivide=None)}
         notation_handlelength = 3
     else:
         notation_legend_elements = [Line2D([0], [0], color='k', ls='--'),
                                     Line2D([0], [0], color='k', ls='-'),
                                     Patch(color='k',alpha=0.25)]
-        notation_legend_labels = ['Injection','Median Fit','$95\%$ C.I.']
+        notation_legend_labels = ['Injection','Median Fit',r'$95\%$ C.I.']
         notation_handler_map = {}
         notation_handlelength = None
     
@@ -528,11 +540,11 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
                 if sm_name == 'noise':
                     Np = 10**post_sm[0]
                     Na = 10**post_sm[1]
-                    Sgw_j = sm.instr_noise_spectrum(fdata,f0,Np=Np,Na=Na)[2,2,:]
+                    Sgw_j = sm.instr_noise_spectrum(fdata,f0,Np=Np,Na=Na)[0,0,:]
                 elif sm_name == 'fixednoise':
                     Np = 10**sm.fixedvals['log_Np']
                     Na = 10**sm.fixedvals['log_Na']
-                    Sgw_j = sm.instr_noise_spectrum(fdata,f0,Np=Np,Na=Na)[2,2,:]
+                    Sgw_j = sm.instr_noise_spectrum(fdata,f0,Np=Np,Na=Na)[0,0,:]
                 ## handle any additional spatial variables (will need to fix this when I introduce hierarchical models)
                 elif hasattr(sm,"blm_start"):
                     post_sm_sph = post_sm[sm.blm_start:]
@@ -654,7 +666,7 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
     
 
   
-def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=None, saveto=None):
+def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=None, saveto=None, histcolor='darkmagenta', smooth=0.75):
 
     '''
     Make posterior plots from the samples generated by tge mcmc/nested sampling algorithm.
@@ -687,8 +699,24 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
     
     saveto : str
         Path to save directory. Default None (will save to params['out_dir'])
+    
+    histcolor: str
+        Matplotlib color for the corner plot histograms.
+        
+    smooth: float or bool
+        Smoothing parameter of the 2D contours to pass to corner.corner. Default 0.75. Set to False for no smoothing.
     '''
-
+    
+    ## set matplotlib plotting style
+    plot_params = {'font.family':'STIXGeneral',
+                   'mathtext.fontset':'stix',
+                   'xtick.labelsize': 20,
+                   'ytick.labelsize': 20,
+                   'axes.labelsize': 24,
+                   'axes.titlesize':20
+                   }
+    matplotlib.rcParams.update(plot_params)
+    
     all_parameters = Model.parameters['all']
 
     if split_by is None:
@@ -742,70 +770,106 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
     
         if params['out_dir'][-1] != '/':
             params['out_dir'] = params['out_dir'] + '/'
-            
-        ## Make chainconsumer corner plots
-        cc = ChainConsumer()
-        cc.add_chain(post[:,subset_filt_i], parameters=parameter_subset_i)
-        cc.configure(smooth=False, kde=False, max_ticks=2, sigmas=np.array([1, 2]), label_font_size=18, tick_font_size=18, \
-                summary=False, statistics="max_central", spacing=2, summary_area=0.95, cloud=False, bins=1.2)
-        cc.configure_truth(color='g', ls='--', alpha=0.7)
-    
+        
+        ## make corner plots
+        fig = plt.figure(figsize=(16,16))
+        N_bins = 35
+        lows = np.min(post[:,subset_filt_i],axis=0)
+        highs = np.max(post[:,subset_filt_i],axis=0)
+        corner.corner(post[:,subset_filt_i], levels=[0.393,0.864], bins=N_bins,
+                      plot_datapoints=False, plot_density=False, fill_contours=True, smooth=smooth,
+                      fig=fig, show_titles=False, max_n_ticks=3, color=histcolor)#, labelpad=0.1)
         if knowTrue:
-            fig = cc.plotter.plot(figsize=(16, 16), truth=truevals)
-        else:
-            fig = cc.plotter.plot(figsize=(16, 16))
-
-        ## make axis labels to be parameter summaries
-        sum_data = cc.analysis.get_summary()
+            truths=[truevals[par] if par in truevals.keys() else None for par in parameter_subset_i]
+            corner.overplot_lines(fig, truths, ls='--', c='k', alpha=0.7)
+        
+        ## get parameter summaries
+        sum_data = {par:corner.quantile(post[:,subset_filt_i][:,par_i],[0.025,0.5,0.975]) for (par_i,par) in enumerate(parameter_subset_i)}
+        
+        # Adjust axis labels and fill between quantiles
         axes = np.array(fig.axes).reshape((npar, npar))
-    
-        # Adjust axis labels
         for ii in range(npar):
             ax = axes[ii, ii]
     
             # get the right summary for the parameter ii
             sum_ax = sum_data[parameter_subset_i[ii]]
+            
+            
+            ## this is a really stupid way to have to do this, but corner doesn't have the option nor returns its hists, and ChainConsumer is Bad Now
+            ## so the following is adapted from old chainconsumer
+            post_ii = post[:,subset_filt_i][:,ii]
+            bins_ii = np.linspace(np.min(post_ii), np.max(post_ii), N_bins + 1)
+            hist_ys, edges = np.histogram(post_ii, bins=bins_ii,density=False,range=())
+            edge_centers = 0.5 * (edges[:-1] + edges[1:])
+            interpolator = interp1d(edge_centers, hist_ys, kind='nearest',bounds_error=False,fill_value=0.)
+            xs= np.linspace(sum_ax[0],sum_ax[2],1000)
+            ax.fill_between(xs, np.zeros(xs.shape), interpolator(xs), color=histcolor, alpha=0.2, zorder=10)
+            
             err =  [sum_ax[2] - sum_ax[1], sum_ax[1]- sum_ax[0]]
-    
+            
+            ## ensure appropriate precision in labels
+            if np.abs(err[0]) <= 1e-3 and np.abs(err[1]) <= 1e-3:
+                mean_prec = '{0:.4f}'
+            elif np.abs(err[0]) <= 1e-2 and np.abs(err[1]) <= 1e-2:
+                mean_prec = '{0:.3f}'
+            elif np.abs(err[0]) <= 1e-1 and np.abs(err[1]) <= 1e-1:
+                mean_prec = '{0:.2f}'
+            else:
+                mean_prec = '{0:.1f}'
+            
+            if np.abs(err[0]) <= 1e-3:
+                err[0] = '{0:.4f}'.format(err[0])
+            elif np.abs(err[0]) <= 1e-2:
+                err[0] = '{0:.3f}'.format(err[0])
+            elif np.abs(err[0]) <= 1e-1:
+                err[0] = '{0:.2f}'.format(err[0])
+            else:
+                err[0] = '{0:.1f}'.format(err[0])
+        
+            if np.abs(err[1]) <= 1e-3:
+                err[1] = '{0:.4f}'.format(err[1])
+            elif np.abs(err[1]) <= 1e-2:
+                err[1] = '{0:.3f}'.format(err[1])
+            elif np.abs(err[1]) <= 1e-1:
+                err[1] = '{0:.2f}'.format(err[1])
+            else:
+                err[1] = '{0:.1f}'.format(err[1])
+            
+            
             if np.abs(sum_ax[1]) <= 1e-3:
-                mean_def = '{0:.3e}'.format(sum_ax[1])
+                mean_def = mean_prec.format(sum_ax[1])
                 eidx = mean_def.find('e')
                 base = float(mean_def[0:eidx])
                 exponent = int(mean_def[eidx+1:])
                 mean_form = str(base)
                 exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
             else:
-                mean_form = '{0:.3f}'.format(sum_ax[1])
+                mean_form = mean_prec.format(sum_ax[1])
                 exp_form = ''
-    
-            if np.abs(err[0]) <= 1e-2:
-                err[0] = '{0:.4f}'.format(err[0])
-            else:
-                err[0] = '{0:.2f}'.format(err[0])
-    
-            if np.abs(err[1]) <= 1e-2:
-                err[1] = '{0:.4f}'.format(err[1])
-            else:
-                err[1] = '{0:.2f}'.format(err[1])
     
             label =  parameter_subset_i[ii][:-1] + ' = ' + mean_form + '^{+' + err[0] + '}_{-' + err[1] + '}'+exp_form+'$'
     
-            ax.set_title(label, {'fontsize':18}, loc='left')
+            ax.set_title(label, pad=10, loc='left')
             
-            ## chainconsumer has probably messed up the labels on the sides , so reset them
-            ## only need to do this for the first column and last row
-            if ii in [0,1]:
-                ax_left = axes[ii,0]
-                ax_left.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_left.set_ylabel(parameter_subset_i[ii])
-        
-                ax_bottom = axes[-1,ii]
-                ax_bottom.xaxis.set_major_formatter(ScalarFormatter(useOffset=False))
-                ax_bottom.set_xlabel(parameter_subset_i[ii])
+            ## set histogram scales, make sure we can see where the trueval is if relevant
+            width_fac = 0.1
+            spread = highs[ii]-lows[ii]
+            lowlim = lows[ii] - width_fac*spread
+            upperlim = highs[ii] + width_fac*spread
+            
+            if knowTrue and truths[ii] is not None and truths[ii] < lowlim:
+                lowlim = truths[ii] - width_fac*spread
+            elif knowTrue and truths[ii] is not None and truths[ii] > upperlim:
+                upperlim = truths[ii] + width_fac*spread
+            
+            for vert_ax in axes[:,ii]:
+                vert_ax.set_xlim(lowlim,upperlim)
+            for hor_ax in axes[:ii,ii]:
+                hor_ax.set_ylim(lowlim,upperlim)
             
             ## set the labels identical for all axes
-            axes[ii,0].set_ylabel(parameter_subset_i[ii],fontsize=18)
-            axes[-1,ii].set_xlabel(parameter_subset_i[ii],fontsize=18)
+            axes[ii,0].set_ylabel(parameter_subset_i[ii])
+            axes[-1,ii].set_xlabel(parameter_subset_i[ii])
             
         ## plot aesthetics
         fig.align_ylabels()
@@ -822,11 +886,6 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
             print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
         plt.close()
         
-        if not params['load_data']:    
-            # plot walkers
-            fig = cc.plotter.plot_walks(truth=truevals, convolve=10)
-            plt.savefig(params['out_dir'] + 'plotwalks.png', dpi=200)
-            plt.close()
 
 
 if __name__ == '__main__':
@@ -865,13 +924,18 @@ if __name__ == '__main__':
     
     post = np.loadtxt(params['out_dir'] + "/post_samples.txt")
     
-    matplotlib.rcParams.update(matplotlib.rcParamsDefault)
     
     if not args.nocorner:
+        ## reset the matplotlib style setting
+        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         cornermaker(post, params, parameters, inj, Model, Injection=Injection, split_by=args.cornersplit)    
     if not args.nofit:
+        ## reset the matplotlib style setting
+        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         fitmaker(post, params, parameters, inj, Model, Injection, plot_data_path=args.plotdatadir)
     if not args.nomap:
+        ## reset the matplotlib style setting
+        matplotlib.rcParams.update(matplotlib.rcParamsDefault)
         if 'healpy_proj' in params.keys():
             mapmaker(post, params, parameters, Model, coord=params['healpy_proj'], cmap=params['colormap'], plot_data_path=args.plotdatadir)
         else:

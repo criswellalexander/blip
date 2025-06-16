@@ -461,30 +461,29 @@ class Galaxy_Model():
         if grid_spec=='interval':
             resolution = grid_res
             print("Generating grid with dx = dy = dz = {:0.2f} kpc".format(resolution))
-            xs = np.arange(-gal_rad,gal_rad,resolution)
-            ys = np.arange(-gal_rad,gal_rad,resolution)
-            zs = np.arange(-gal_height,gal_height,resolution)
+            xs = jnp.arange(-gal_rad,gal_rad,resolution)
+            ys = jnp.arange(-gal_rad,gal_rad,resolution)
+            zs = jnp.arange(-gal_height,gal_height,resolution)
         elif grid_spec=='npoints':
             if type(grid_res) is not int:
                 raise TypeError("If grid_spec is 'npoints', grid_res must be an integer.")
             resolution = gal_rad*2 / grid_res
             print("Generating grid with dx = dy = dz = {:0.2f} kpc".format(resolution))
-            xs = np.linspace(-gal_rad,gal_rad,grid_res)
-            ys = np.linspace(-gal_rad,gal_rad,grid_res)
-            zs = np.arange(-gal_height,gal_height,resolution)
+            xs = jnp.linspace(-gal_rad,gal_rad,grid_res)
+            ys = jnp.linspace(-gal_rad,gal_rad,grid_res)
+            zs = jnp.arange(-gal_height,gal_height,resolution)
         
         ## generate meshgrid
-        x, y, z = np.meshgrid(xs,ys,zs)
+        x, y, z = jnp.meshgrid(xs,ys,zs)
         self.z = z
-        self.r = np.sqrt(x**2 + y**2)
+        self.r = jnp.sqrt(x**2 + y**2)
         ## Use astropy.coordinates to transform from galactocentric frame to galactic (solar system barycenter) frame.
         gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
-        SSBc = gc.transform_to(cc.Galactic)
+        SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
         ## 1/D^2 with filtering to avoid nearby, presumeably resolved, DWDs
-        self.dist_adj = (np.array(SSBc.distance)>2)*(np.array(SSBc.distance))**-2
+        self.dist_adj = (jnp.array(SSBc.distance)>2)*(jnp.array(SSBc.distance))**-2
         ## make pixel grid
-        self.pixels = hp.ang2pix(self.nside,np.array(SSBc.l),np.array(SSBc.b),lonlat=True).flatten()
-        self.rGE = hp.rotator.Rotator(coord=['G','E'])
+        self.pixels = hp.ang2pix(self.nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True).flatten()
         
         ## set global (fixed) MW model parameters
         self.rho_c = 1 # some fiducial central density
@@ -528,9 +527,7 @@ class Galaxy_Model():
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
         ## Bin
-        skymap_galactic = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
-        ## Transform into the ecliptic
-        skymap = self.rGE.rotate_map_pixel(skymap_galactic)
+        skymap = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
         
         return skymap
 
@@ -556,9 +553,7 @@ class Galaxy_Model():
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
         ## Bin
-        skymap_galactic = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
-        ## Transform into the ecliptic
-        skymap = self.rGE.rotate_map_pixel(skymap_galactic)
+        skymap = jnp.bincount(self.pixels,weights=unresolved_powers.flatten(),length=self.length)
         
         return skymap
 
@@ -604,9 +599,9 @@ def generate_galactic_foreground(rh,zh,nside):
     disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh) 
     bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
     DWD_density = disk_density + bulge_density
-    ## Use astropy.coordinates to transform from galactocentric frame to galactic (solar system barycenter) frame.
-    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
-    SSBc = gc.transform_to(cc.Galactic)
+    ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
+    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')    
+    SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
     ## Calculate GW power
     DWD_powers = DWD_density*(np.array(SSBc.distance))**-2
     ## Filter nearby grid points (cut out 2kpc sphere)
@@ -615,19 +610,17 @@ def generate_galactic_foreground(rh,zh,nside):
     DWD_unresolved_powers = DWD_powers*(np.array(SSBc.distance) > 2)
     ## Transform to healpix basis
     ## resolution is 2x analysis resolution
-    pixels = hp.ang2pix(nside,np.array(SSBc.l),np.array(SSBc.b),lonlat=True)
+#    import pdb; pdb.set_trace()
+    pixels = hp.ang2pix(nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True)
     ## Create skymap
     ## Bin
-    astro_mapG = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
-
-    ## Transform into the ecliptic
-    rGE = hp.rotator.Rotator(coord=['G','E'])
-    astro_map = rGE.rotate_map_pixel(astro_mapG)
+    astro_map = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
     
     return astro_map
 
 
 def generate_sdg(nside,ra=80.21496, dec=-69.37772, D=50, r=2.1462, N=2169264):
+    
     '''
     Generates the stochastic DWD signal from a a generic toy model spherical dwarf galaxy (SDG). Default values are for the LMC.
     
@@ -651,7 +644,7 @@ def generate_sdg(nside,ra=80.21496, dec=-69.37772, D=50, r=2.1462, N=2169264):
     '''
     ## ===== ipynb compute_density function ========================================
     ## all below is only for galaxy model creation
-        ## set grid density
+    ## set grid density
     grid_fill = 200
 
     # sdg radius: (default is the LMC)
@@ -675,38 +668,28 @@ def generate_sdg(nside,ra=80.21496, dec=-69.37772, D=50, r=2.1462, N=2169264):
     zs = np.linspace(z_sdg-sdg_r,z_sdg+sdg_r,grid_fill)
     x, y, z = np.meshgrid(xs,ys,zs)
     
-    DWD_density = N / (0.524*200**3)
-    # 0.524 is the filling factor of a sphere in a cube
-    # this gives us the number density for points only within the sphere of the sdg, instead of the entire cube
-
-    ## creating a sphere_filter 3D array, with 1s in a sphere and 0s otherwise
+    
+    ## creating a uniform spherical density, and zero density beyond that
     # rs = distance from any point to the center of the sdg
     rs = np.sqrt((x-x_sdg)**2+(y-y_sdg)**2+(z-z_sdg)**2)
     
-    # set any points within the sdg radius to 1, any points outside to 0
-    sphere_filter = np.zeros((grid_fill,grid_fill,grid_fill))
-    for i in range(grid_fill):
-        for j in range(grid_fill):
-            for k in range(grid_fill):
-                sphere_filter[i,j,k] = 1 if (rs[i,j,k]<sdg_r) else 0
-    ## ** this is probably a computationally expensive way to do this, but it works
+    DWD_density = (rs<=sdg_r) * N / (0.524*grid_fill**3) 
+    # 0.524 is the filling factor of a sphere in a cube
+    # this gives us the number density for points only within the sphere of the sdg, instead of the entire cube
 
-    ## =============================================================================
-    
-    ## ===== ipynb next block ======================================================
     ## Use astropy.coordinates to transform from galactocentric frame to galactic (solar system barycenter) frame.
-    gc = cc.Galactocentric(x=x,y=y,z=z)
+    gc = cc.SkyCoord(x=x,y=y,z=z, frame='galactocentric')
+    #cc.Galactocentric(x=x,y=y,z=z)
     SSBc = gc.transform_to(cc.Galactic)
-    ## =============================================================================
-   
+
     ## Calculate GW power
     ## density will be total power divided by the points that we're simulating
     ## assuming all grid points will contribute an equal amount of power
-    DWD_powers = sphere_filter*DWD_density*(np.array(SSBc.distance))**-2
+    DWD_powers = DWD_density*(np.array(SSBc.distance))**-2
     ## Filter nearby grid points (cut out 2kpc sphere)
     ## This is a temporary soln. Later, we will want to do something more subtle, sampling a DWD pop from
     ## the density distribution and filtering out resolveable SNR>80 binaries
-    DWD_unresolved_powers = sphere_filter*DWD_powers*(np.array(SSBc.distance) > 2)
+    DWD_unresolved_powers = DWD_powers*(np.array(SSBc.distance) > 2)
     ## will need to generate DWD_unresolved_powers for sdg
     
 
