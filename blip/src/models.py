@@ -219,7 +219,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             self.spectral_prior = self.fixedpowerlaw_prior
         
         elif self.spectral_model_name == 'brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
@@ -228,10 +228,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.truevals[r'$\alpha_1$'] = self.injvals['alpha1']
                 self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
-                self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
+                self.truevals[r'$\log_{10} (f_{\rm break})$'] = self.injvals['log_fbreak']
         
         elif self.spectral_model_name == 'fixedalpha1brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$',r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$',r'$\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
@@ -242,7 +242,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.fixedvals[r'$\alpha_1$'] = self.injvals['alpha1']
                 self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
                 self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
-                self.truevals[r'$\log_{10} (f_{break})$'] = self.injvals['log_fbreak']
+                self.truevals[r'$\log_{10} (f_{\rm break})$'] = self.injvals['log_fbreak']
                 self.truevals[r'$\delta$'] = self.injvals['delta']
         
         elif self.spectral_model_name == 'truncatedpowerlaw':
@@ -391,7 +391,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with alpha_1 = 2/3
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']#,r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']#,r'$\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1delta_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -403,7 +403,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with both alphas free
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -1829,7 +1829,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Transform to actual priors
         
         log_omega0 = -3*theta[0] - 9
-        alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
+        alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
 
@@ -1860,7 +1860,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Transform to actual priors
         
         log_omega0 = -3*theta[0] - 9
-        alpha_2 = 4*theta[1] + self.fixedvals['alpha_1'] ## must be greater than alpha_1
+        alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
 
         return [log_omega0, alpha_2, log_fbreak]
