@@ -800,7 +800,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
                 
-                self.spatial_parameters = [r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$z_{\mathrm{h}}$']
                 self.prior = self.mw1parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -835,7 +835,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
-                self.spatial_parameters = [r'$r_\mathrm{h}$',r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$r_{\mathrm{h}}$',r'$z_{\mathrm{h}}$']
                 self.prior = self.mw2parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
