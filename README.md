@@ -3,7 +3,7 @@
 This is a fully Bayesian Python package for detecting/characterizing stochastic gravitational wave backgrounds and foregrounds with LISA. It is designed to support flexible, modular analyses of multiple isotropic and anisotropic stochastic signals, with a variety of source morphologies.
 
 
-1) We recommend creating a dedicated conda environment for BLIP. Conda is a common python virtual environment manager; if you already have Conda, start at step 2; otherwise [install conda.](https://docs.conda.io/projects/conda/en/latest/user-guide/install/)
+1) We recommend creating a dedicated conda environment for BLIP. Conda is a common python virtual environment manager; if you already have Conda, start at step 2; otherwise [install conda.](https://docs.conda.io/projects/conda/en/latest/user-guide/install/) You can also use a native Python virtual environment if desired.
 
 2) Create an environment. We require Python >= 3.10, and recommend 3.12:
 
@@ -25,12 +25,6 @@ in this directory. The `-e` option performs an editable install, so that editing
 `pip install -e .[gpu]`
 
 which will install JAX with CUDA 12 dependencies.
-
-## TEMPORARY FIX FOR CHAINCONSUMER
-We require chainconsumer 0.34.0, as the author of that code has revamped it in more recent versions to be significantly clunkier. We will soon be depreciating chainconsumer in favor of corner or our own implementation. For the moment, however, chainconsumer 0.34.0 has a breaking import. To resolve this, follwing the installation process, navigate to (e.g.) [your conda path]/envs/blip-env/lib/python3.12/site-packages/chainconsumer/analysis.py. On line 4, replace
-`from scipy.integrate import simps`
-with
-`from scipy.integrate import simpson as simps`
 
 You should now be ready to go! To run BLIP, you only need to provide a configuration file. In this directory, you will find params_default.ini, a pre-constructed config file with reasonable settings and accompanying parameter explanations.
 
