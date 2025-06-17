@@ -1,5 +1,7 @@
 import numpy as np
 import os
+from jax import config
+config.update("jax_enable_x64", True)
 
 class LISAdata():
 
@@ -62,7 +64,7 @@ class LISAdata():
 
         ## the window for splicing
         splice_win = np.sin(np.pi * t_arr/N)
-
+        
         ## Loop over splice segments
         for ii in range(self.Injection.nsplice):
             ## move frequency to be the zeroth-axis, then cholesky decomp
