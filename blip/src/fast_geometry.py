@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as LA
 import jax.numpy as jnp
 #import jax.numpy.linalg as JLA
-from jax import lax
+import jax
 #from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 from jax import config
@@ -38,6 +38,20 @@ class fast_geometry(sph_geometry):
         else:
             self.parallel = False
         self.armlength = 2.5e9
+        
+        ## numpy/jax.numpy switch
+        global xp
+        backend = jax.default_backend()
+        if backend == 'gpu':
+            self.gpu = True
+            xp = jnp
+        elif backend == 'cpu':
+            self.gpu = False
+            xp = np
+        else:
+            print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
+            self.gpu = False
+            xp = np
 
 
 
@@ -98,9 +112,9 @@ class fast_geometry(sph_geometry):
 
 
         ## Construct position vectors r_n
-        rs1 = jnp.array([x_n[:, 0],y_n[:, 0],z_n[:, 0]])
-        rs2 = jnp.array([x_n[:, 1],y_n[:, 1],z_n[:, 1]])
-        rs3 = jnp.array([x_n[:, 2],y_n[:, 2],z_n[:, 2]])
+        rs1 = xp.array([x_n[:, 0],y_n[:, 0],z_n[:, 0]])
+        rs2 = xp.array([x_n[:, 1],y_n[:, 1],z_n[:, 1]])
+        rs3 = xp.array([x_n[:, 2],y_n[:, 2],z_n[:, 2]])
 
         return rs1, rs2, rs3
 
@@ -114,14 +128,14 @@ class fast_geometry(sph_geometry):
         Wrapper function to take sky integral and return response array slice
         '''
         
-        R1_ii  = self.dOmega/(4*jnp.pi)*jnp.sum(F1_ii, axis=1 )
-        R2_ii  = self.dOmega/(4*jnp.pi)*jnp.sum(F2_ii, axis=1 ) 
-        R3_ii  = self.dOmega/(4*jnp.pi)*jnp.sum(F3_ii, axis=1 ) 
-        R12_ii = self.dOmega/(4*jnp.pi)*jnp.sum(F12_ii, axis=1) 
-        R13_ii = self.dOmega/(4*jnp.pi)*jnp.sum(F13_ii, axis=1) 
-        R23_ii = self.dOmega/(4*jnp.pi)*jnp.sum(F23_ii, axis=1) 
+        R1_ii  = self.dOmega/(4*xp.pi)*xp.sum(F1_ii, axis=1 )
+        R2_ii  = self.dOmega/(4*xp.pi)*xp.sum(F2_ii, axis=1 ) 
+        R3_ii  = self.dOmega/(4*xp.pi)*xp.sum(F3_ii, axis=1 ) 
+        R12_ii = self.dOmega/(4*xp.pi)*xp.sum(F12_ii, axis=1) 
+        R13_ii = self.dOmega/(4*xp.pi)*xp.sum(F13_ii, axis=1) 
+        R23_ii = self.dOmega/(4*xp.pi)*xp.sum(F23_ii, axis=1) 
         
-        return jnp.array([ [R1_ii, R12_ii, R13_ii] , [jnp.conj(R12_ii), R2_ii, R23_ii], [jnp.conj(R13_ii), jnp.conj(R23_ii), R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [xp.conj(R12_ii), R2_ii, R23_ii], [xp.conj(R13_ii), xp.conj(R23_ii), R3_ii] ])
     
     def sph_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, ghost_arg=None):
         
@@ -129,17 +143,17 @@ class fast_geometry(sph_geometry):
         Wrapper function to convolve with Ylms and return response array slice
         '''
         
-        R1_ii  = self.dOmega*jnp.einsum('ij, jk', F1_ii, self.Ylms)
-        R2_ii  = self.dOmega*jnp.einsum('ij, jk', F2_ii, self.Ylms)
-        R3_ii = self.dOmega*jnp.einsum('ij, jk', F3_ii, self.Ylms)
-        R12_ii = self.dOmega*jnp.einsum('ij, jk', F12_ii, self.Ylms)
-        R13_ii = self.dOmega*jnp.einsum('ij, jk', F13_ii, self.Ylms)
-        R23_ii = self.dOmega*jnp.einsum('ij, jk', F23_ii, self.Ylms)
-        R21_ii = self.dOmega*jnp.einsum('ij, jk', jnp.conj(F12_ii), self.Ylms)
-        R31_ii = self.dOmega*jnp.einsum('ij, jk', jnp.conj(F13_ii), self.Ylms)
-        R32_ii = self.dOmega*jnp.einsum('ij, jk', jnp.conj(F23_ii), self.Ylms)
+        R1_ii  = self.dOmega*xp.einsum('ij, jk', F1_ii, self.Ylms)
+        R2_ii  = self.dOmega*xp.einsum('ij, jk', F2_ii, self.Ylms)
+        R3_ii = self.dOmega*xp.einsum('ij, jk', F3_ii, self.Ylms)
+        R12_ii = self.dOmega*xp.einsum('ij, jk', F12_ii, self.Ylms)
+        R13_ii = self.dOmega*xp.einsum('ij, jk', F13_ii, self.Ylms)
+        R23_ii = self.dOmega*xp.einsum('ij, jk', F23_ii, self.Ylms)
+        R21_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F12_ii), self.Ylms)
+        R31_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F13_ii), self.Ylms)
+        R32_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F23_ii), self.Ylms)
     
-        return jnp.array([ [R1_ii, R12_ii, R13_ii] , [R21_ii, R2_ii, R23_ii], [R31_ii, R32_ii, R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [R21_ii, R2_ii, R23_ii], [R31_ii, R32_ii, R3_ii] ])
 
     
     def pix_convolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii,skymap):
@@ -152,20 +166,20 @@ class fast_geometry(sph_geometry):
         ## Detector response summed over polarization and integrated over sky direction
         ## The travel time phases for the which are relevent for the cross-channel are
         ## accounted for in the Fplus and Fcross expressions above.
-#        R1_ii  = self.dOmega*jnp.sum( F1_ii * skymap[None, :], axis=1 )
-#        R2_ii  = self.dOmega*jnp.sum( F2_ii * skymap[None, :], axis=1 ) 
-#        R3_ii  = self.dOmega*jnp.sum( F3_ii * skymap[None, :], axis=1 ) 
-#        R12_ii = self.dOmega*jnp.sum( F12_ii * skymap[None, :], axis=1) 
-#        R13_ii = self.dOmega*jnp.sum( F13_ii * skymap[None, :], axis=1) 
-#        R23_ii = self.dOmega*jnp.sum( F23_ii * skymap[None, :], axis=1) 
-        R1_ii  = self.dOmega*jnp.einsum('ij, j', F1_ii, skymap)
-        R2_ii  = self.dOmega*jnp.einsum('ij, j', F2_ii, skymap)
-        R3_ii  = self.dOmega*jnp.einsum('ij, j', F3_ii, skymap)
-        R12_ii = self.dOmega*jnp.einsum('ij, j', F12_ii, skymap)
-        R13_ii = self.dOmega*jnp.einsum('ij, j', F13_ii, skymap)
-        R23_ii = self.dOmega*jnp.einsum('ij, j', F23_ii, skymap)
+#        R1_ii  = self.dOmega*xp.sum( F1_ii * skymap[None, :], axis=1 )
+#        R2_ii  = self.dOmega*xp.sum( F2_ii * skymap[None, :], axis=1 ) 
+#        R3_ii  = self.dOmega*xp.sum( F3_ii * skymap[None, :], axis=1 ) 
+#        R12_ii = self.dOmega*xp.sum( F12_ii * skymap[None, :], axis=1) 
+#        R13_ii = self.dOmega*xp.sum( F13_ii * skymap[None, :], axis=1) 
+#        R23_ii = self.dOmega*xp.sum( F23_ii * skymap[None, :], axis=1) 
+        R1_ii  = self.dOmega*xp.einsum('ij, j', F1_ii, skymap)
+        R2_ii  = self.dOmega*xp.einsum('ij, j', F2_ii, skymap)
+        R3_ii  = self.dOmega*xp.einsum('ij, j', F3_ii, skymap)
+        R12_ii = self.dOmega*xp.einsum('ij, j', F12_ii, skymap)
+        R13_ii = self.dOmega*xp.einsum('ij, j', F13_ii, skymap)
+        R23_ii = self.dOmega*xp.einsum('ij, j', F23_ii, skymap)
         
-        return jnp.array([ [R1_ii, R12_ii, R13_ii] , [jnp.conj(R12_ii), R2_ii, R23_ii], [jnp.conj(R13_ii), jnp.conj(R23_ii), R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [xp.conj(R12_ii), R2_ii, R23_ii], [xp.conj(R13_ii), xp.conj(R23_ii), R3_ii] ])
     
     def pix_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, ghost_arg=None):
         '''
@@ -173,7 +187,7 @@ class fast_geometry(sph_geometry):
         
         '''
         
-        return jnp.array([ [F1_ii, F12_ii, F13_ii] , [jnp.conj(F12_ii), F2_ii, F23_ii], [jnp.conj(F13_ii), jnp.conj(F23_ii), F3_ii] ])
+        return xp.array([ [F1_ii, F12_ii, F13_ii] , [xp.conj(F12_ii), F2_ii, F23_ii], [xp.conj(F13_ii), xp.conj(F23_ii), F3_ii] ])
     
     def pix_masked_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii,mask):
         '''
@@ -181,9 +195,9 @@ class fast_geometry(sph_geometry):
         
         '''
 
-        return jnp.array([ [F1_ii[:,mask], F12_ii[:,mask], F13_ii[:,mask]] , 
-                          [jnp.conj(F12_ii[:,mask]), F2_ii[:,mask], F23_ii[:,mask]], 
-                          [jnp.conj(F13_ii[:,mask]), jnp.conj(F23_ii[:,mask]), F3_ii[:,mask]] ])
+        return xp.array([ [F1_ii[:,mask], F12_ii[:,mask], F13_ii[:,mask]] , 
+                          [xp.conj(F12_ii[:,mask]), F2_ii[:,mask], F23_ii[:,mask]], 
+                          [xp.conj(F13_ii[:,mask]), xp.conj(F23_ii[:,mask]), F3_ii[:,mask]] ])
     
     
     ########################################################################
@@ -204,9 +218,12 @@ class fast_geometry(sph_geometry):
         
         ## generically assign the frequency slice to each unique response
         ## the '...' indexing allows this to handle both 3 x 3 x f x t and 3 x 3 x f x t x n response shapes
-
-        for jj in range(len(self.unique_responses)):
-            self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+        if self.gpu:
+            for jj in range(len(self.unique_responses)):
+                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+        else:
+            for jj in range(len(self.unique_responses)):
+                self.unique_responses[jj][:,:,ii,...] = Rf[jj]
         
         return
     
@@ -268,47 +285,47 @@ class fast_geometry(sph_geometry):
         f0_ii = self.f0_jax[ii]
         
         # Calculate GW transfer function for the michelson channels
-        gammaU_plus    =    1/2 * (jnp.sinc((f0_ii)*(1 - self.udir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3+self.udir)) + \
-                         jnp.sinc((f0_ii)*(1 + self.udir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1+self.udir)))
+        gammaU_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.udir)) + \
+                         xp.sinc((f0_ii)*(1 + self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.udir)))
 
-        gammaV_plus    =    1/2 * (jnp.sinc((f0_ii)*(1 - self.vdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3+self.vdir)) + \
-                         jnp.sinc((f0_ii)*(1 + self.vdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1+self.vdir)))
+        gammaV_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.vdir)) + \
+                         xp.sinc((f0_ii)*(1 + self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.vdir)))
 
-        gammaW_plus    =    1/2 * (jnp.sinc((f0_ii)*(1 - self.wdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3+self.wdir)) + \
-                         jnp.sinc((f0_ii)*(1 + self.wdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1+self.wdir)))
+        gammaW_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.wdir)) + \
+                         xp.sinc((f0_ii)*(1 + self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.wdir)))
 
 
         # Calculate GW transfer function for the michelson channels
-        gammaU_minus    =    1/2 * (jnp.sinc((f0_ii)*(1 + self.udir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3 - self.udir)) + \
-                         jnp.sinc((f0_ii)*(1 - self.udir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1 - self.udir)))
+        gammaU_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.udir)) + \
+                         xp.sinc((f0_ii)*(1 - self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.udir)))
 
-        gammaV_minus    =    1/2 * (jnp.sinc((f0_ii)*(1 + self.vdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3 - self.vdir)) + \
-                         jnp.sinc((f0_ii)*(1 - self.vdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1 - self.vdir)))
+        gammaV_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.vdir)) + \
+                         xp.sinc((f0_ii)*(1 - self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.vdir)))
 
-        gammaW_minus    =    1/2 * (jnp.sinc((f0_ii)*(1 + self.wdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(3 - self.wdir)) + \
-                         jnp.sinc((f0_ii)*(1 - self.wdir)/jnp.pi)*jnp.exp(-1j*f0_ii*(1 - self.wdir)))
+        gammaW_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.wdir)) + \
+                         xp.sinc((f0_ii)*(1 - self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.wdir)))
 
 
         ## Michelson antenna patterns
         ## Calculate Fplus
-        Fplus1 = 0.5*(self.Fplus_u*gammaU_plus - self.Fplus_v*gammaV_plus)*jnp.exp(-1j*f0_ii*(self.udir + self.vdir)/jnp.sqrt(3))
-        Fplus2 = 0.5*(self.Fplus_w*gammaW_plus - self.Fplus_u*gammaU_minus)*jnp.exp(-1j*f0_ii*(-self.udir + self.vdir)/jnp.sqrt(3))
-        Fplus3 = 0.5*(self.Fplus_v*gammaV_minus - self.Fplus_w*gammaW_minus)*jnp.exp(1j*f0_ii*(self.vdir + self.wdir)/jnp.sqrt(3))
+        Fplus1 = 0.5*(self.Fplus_u*gammaU_plus - self.Fplus_v*gammaV_plus)*xp.exp(-1j*f0_ii*(self.udir + self.vdir)/xp.sqrt(3))
+        Fplus2 = 0.5*(self.Fplus_w*gammaW_plus - self.Fplus_u*gammaU_minus)*xp.exp(-1j*f0_ii*(-self.udir + self.vdir)/xp.sqrt(3))
+        Fplus3 = 0.5*(self.Fplus_v*gammaV_minus - self.Fplus_w*gammaW_minus)*xp.exp(1j*f0_ii*(self.vdir + self.wdir)/xp.sqrt(3))
 
         ## Calculate Fcross
-        Fcross1 = 0.5*(self.Fcross_u*gammaU_plus  - self.Fcross_v*gammaV_plus)*jnp.exp(-1j*f0_ii*(self.udir + self.vdir)/jnp.sqrt(3))
-        Fcross2 = 0.5*(self.Fcross_w*gammaW_plus  - self.Fcross_u*gammaU_minus)*jnp.exp(-1j*f0_ii*(-self.udir + self.vdir)/jnp.sqrt(3))
-        Fcross3 = 0.5*(self.Fcross_v*gammaV_minus - self.Fcross_w*gammaW_minus)*jnp.exp(1j*f0_ii*(self.vdir + self.wdir)/jnp.sqrt(3))
+        Fcross1 = 0.5*(self.Fcross_u*gammaU_plus  - self.Fcross_v*gammaV_plus)*xp.exp(-1j*f0_ii*(self.udir + self.vdir)/xp.sqrt(3))
+        Fcross2 = 0.5*(self.Fcross_w*gammaW_plus  - self.Fcross_u*gammaU_minus)*xp.exp(-1j*f0_ii*(-self.udir + self.vdir)/xp.sqrt(3))
+        Fcross3 = 0.5*(self.Fcross_v*gammaV_minus - self.Fcross_w*gammaW_minus)*xp.exp(1j*f0_ii*(self.vdir + self.wdir)/xp.sqrt(3))
 
         ## Detector response averaged over polarization
         ## The travel time phases for the which are relevent for the cross-channel are
         ## accounted for in the Fplus and Fcross expressions above.
-        F1_ii  = (1/2)*((jnp.absolute(Fplus1))**2 + (jnp.absolute(Fcross1))**2)
-        F2_ii  = (1/2)*((jnp.absolute(Fplus2))**2 + (jnp.absolute(Fcross2))**2) 
-        F3_ii  = (1/2)*((jnp.absolute(Fplus3))**2 + (jnp.absolute(Fcross3))**2) 
-        F12_ii = (1/2)*(jnp.conj(Fplus1)*Fplus2 + jnp.conj(Fcross1)*Fcross2)
-        F13_ii = (1/2)*(jnp.conj(Fplus1)*Fplus3 + jnp.conj(Fcross1)*Fcross3)
-        F23_ii = (1/2)*(jnp.conj(Fplus2)*Fplus3 + jnp.conj(Fcross2)*Fcross3)
+        F1_ii  = (1/2)*((xp.absolute(Fplus1))**2 + (xp.absolute(Fcross1))**2)
+        F2_ii  = (1/2)*((xp.absolute(Fplus2))**2 + (xp.absolute(Fcross2))**2) 
+        F3_ii  = (1/2)*((xp.absolute(Fplus3))**2 + (xp.absolute(Fcross3))**2) 
+        F12_ii = (1/2)*(xp.conj(Fplus1)*Fplus2 + xp.conj(Fcross1)*Fcross2)
+        F13_ii = (1/2)*(xp.conj(Fplus1)*Fplus3 + xp.conj(Fcross1)*Fcross3)
+        F23_ii = (1/2)*(xp.conj(Fplus2)*Fplus3 + xp.conj(Fcross2)*Fcross3)
 
 #        response_slices = [wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii) if arg is None else wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg) for wrapper, arg in self.wrappers]
         
@@ -348,9 +365,9 @@ class fast_geometry(sph_geometry):
         
         '''
         
-        interior_prod = jnp.einsum("ik,jk -> ijk",arm_hat_ij, arm_hat_ij)
+        interior_prod = xp.einsum("ik,jk -> ijk",arm_hat_ij, arm_hat_ij)
         
-        return 0.5*jnp.einsum("ijk,ijl", interior_prod, mhat_prod - nhat_prod), 0.5*jnp.einsum("ijk,ijl", interior_prod, mhat_prod + nhat_prod)
+        return 0.5*xp.einsum("ijk,ijl", interior_prod, mhat_prod - nhat_prod), 0.5*xp.einsum("ijk,ijl", interior_prod, mhat_prod + nhat_prod)
     
     
     def get_xyz_from_michelson(self):
@@ -453,7 +470,7 @@ class fast_geometry(sph_geometry):
         self.plot_flag = plot_flag
         ## basic preliminaries
         self.f0 = f0
-        self.f0_jax = jnp.array(f0)
+        self.f0_jax = xp.array(f0)
         
         # Area of each pixel in sq.radians
         self.dOmega = hp.pixelfunc.nside2pixarea(self.params['nside'])
@@ -492,9 +509,9 @@ class fast_geometry(sph_geometry):
         
         ## Calculate directional unit vector dot products
         ## Dimensions of udir is time-segs x sky-pixels
-        self.udir = jnp.array(np.einsum('ij,ik',uhat_21,omegahat))
-        self.vdir = jnp.array(np.einsum('ij,ik',vhat_31,omegahat))
-        self.wdir = jnp.array(np.einsum('ij,ik',what_32,omegahat))
+        self.udir = xp.array(np.einsum('ij,ik',uhat_21,omegahat))
+        self.vdir = xp.array(np.einsum('ij,ik',vhat_31,omegahat))
+        self.wdir = xp.array(np.einsum('ij,ik',what_32,omegahat))
 
 
         ## NB --    An attempt to directly adapt e.g. (u o u):e+ as implicit tensor calculations
@@ -607,7 +624,7 @@ class fast_geometry(sph_geometry):
                         
                         
         self.wrappers = unique_wrappers
-        self.unique_responses = [jnp.zeros(shape,dtype='complex') for shape in unique_shapes]
+        self.unique_responses = [xp.zeros(shape,dtype='complex') for shape in unique_shapes]
         
         
         
