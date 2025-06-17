@@ -1,7 +1,8 @@
 import numpy as np
 import numpy.linalg as LA
 import jax.numpy as jnp
-import jax.numpy.linalg as JLA
+#import jax.numpy.linalg as JLA
+from jax import lax
 #from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 from jax import config
@@ -647,9 +648,20 @@ class fast_geometry(sph_geometry):
                 
         return
 
-
-
-
+#    def scan_func(self,ii,unique_responses):
+#        for jj in range(len(self.unique_responses)):
+#            self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+#        return self.unpack_wrapper(ii,self.frequency_response_wrapper(ii))
+#
+#    def scan_func(self,ii): ## list of length number of responses, each ofh which has a frequency axis, but are not necessarily the same shape
+#        
+#        self.unique_responses, _ = lax.scan(subscan_func,)
+#        unique_responses = subscan_func(jj)
+#        
+#        return 
+#    
+#    def subscan_func(unique_responses,jj):
+#        
 
 
 
