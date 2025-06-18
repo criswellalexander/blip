@@ -43,9 +43,11 @@ class fast_geometry(sph_geometry):
         global xp
         backend = jax.default_backend()
         if backend == 'gpu':
+            print("GPU detected; performing response function calculations on GPU...")
             self.gpu = True
             xp = jnp
         elif backend == 'cpu':
+            print("No GPU detected; performing response function calculations on CPU...")
             self.gpu = False
             xp = np
         else:

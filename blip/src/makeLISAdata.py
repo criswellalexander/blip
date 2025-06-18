@@ -23,9 +23,11 @@ class LISAdata():
         global xp
         backend = jax.default_backend()
         if backend == 'gpu':
+            print("GPU detected; performing data simulation on GPU...")
             self.gpu = True
             xp = jnp
         elif backend == 'cpu':
+            print("No GPU detected; performing data simulation on CPU...")
             self.gpu = False
             xp = np
         else:
