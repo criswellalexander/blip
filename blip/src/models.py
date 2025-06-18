@@ -2559,10 +2559,7 @@ class Injection():#geometry,sph_geometry):
         ## parallelization has been depreciated now that the response function calculations are handled elsewhere
         for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
             print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-            t1 = time.time()
             cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
-            t2 = time.time()
-            print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
             self.components[component_name] = cm
             self.truevals[component_name] = cm.truevals
     

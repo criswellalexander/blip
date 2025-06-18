@@ -142,7 +142,7 @@ class LISA(LISAdata, Model):
         keys = rng.integers(int(1e9),size=len(self.Injection.sgwb_component_names),dtype='int32')
         
         for component, key in zip(self.Injection.sgwb_component_names,keys):
-            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key=key)
+            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key)
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
 
             # Add gravitational-wave time series to noise time-series
