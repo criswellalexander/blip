@@ -32,8 +32,6 @@ class LISAdata():
             print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
-        self.gpu = True
-        xp = jnp
             
     ## Method for reading frequency domain spectral data if given in an npz file
     def read_spectrum(self):
