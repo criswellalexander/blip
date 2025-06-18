@@ -54,7 +54,7 @@ class fast_geometry(sph_geometry):
             print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
-
+        
 
 
     def lisa_orbits(self, tsegmid):
@@ -222,7 +222,8 @@ class fast_geometry(sph_geometry):
         ## the '...' indexing allows this to handle both 3 x 3 x f x t and 3 x 3 x f x t x n response shapes
         if self.gpu:
             for jj in range(len(self.unique_responses)):
-                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+#                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+                self.unique_responses[jj][:,:,ii,...] = np.array(Rf[jj])
         else:
             for jj in range(len(self.unique_responses)):
                 self.unique_responses[jj][:,:,ii,...] = Rf[jj]
@@ -626,7 +627,8 @@ class fast_geometry(sph_geometry):
                         
                         
         self.wrappers = unique_wrappers
-        self.unique_responses = [xp.zeros(shape,dtype='complex') for shape in unique_shapes]
+        ## we always want to keep the full array on CPU, so use numpy
+        self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
         
         
         
