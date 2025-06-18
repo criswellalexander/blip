@@ -2,6 +2,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import os
+from tqdm import tqdm
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -58,8 +59,17 @@ class LISAdata():
 
 
 
-    def add_sgwb_data(self, injmodel, tbreak = 0.0):
+    def add_sgwb_data(self, injmodel, key, tbreak = 0.0):
         
+        '''
+        Function to simulate the SGWB time series, given a spectrum.
+        
+        Arguments
+        --------------------
+        injmodel (Injection component) : The injection component submodel.
+        key (int) : Key for the numpy (or JAX) rng
+        
+        '''
  
         N = self.Injection.Npersplice
         halfN = int(0.5*N)
@@ -79,25 +89,25 @@ class LISAdata():
 
         ## the window for splicing
         splice_win = xp.sin(xp.pi * t_arr/N)
-        
-        if self.gpu:
-            if 'seed' in self.params.keys():
-                key_gen = self.params['seed']
-            else:
-                key_gen = np.random.randint(int(1e9))
-            key = jax.random.key(key_gen)
             
+        ## create rng, etc.
+        if self.gpu:
+            jax_key = jax.random.key(key)
+        else:
+            numpy_rng = np.random.default_rng(key)
         
         ## Loop over splice segments
-        for ii in range(self.Injection.nsplice):
+        print("Simulating time-domain data for component '{}'...".format(injmodel.name))
+        for ii in tqdm(range(self.Injection.nsplice)):
             ## move frequency to be the zeroth-axis, then cholesky decomp
             L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
             
             ## generate standard normal complex data first
             if self.gpu:
-                z_norm = jax.random.normal(key,shape=(self.Injection.frange.size, 3)) + 1j * jax.random.normal(key,shape=(self.Injection.frange.size, 3))  
+                _, jax_key, jax_key_2 = jax.random.split(jax_key,3) ## needed to actually produce a new set of random numbers every time through the loop!
+                z_norm = jax.random.normal(jax_key,shape=(self.Injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.Injection.frange.size, 3))  
             else:
-                z_norm = xp.random.normal(size=(self.Injection.frange.size, 3)) + 1j * xp.random.normal(size=(self.Injection.frange.size, 3))
+                z_norm = numpy_rng.normal(size=(self.Injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.Injection.frange.size, 3))
 
             ## The data in z_norm is rescaled into z_scale using L_cholesky
             z_scale = xp.einsum('ijk, ikl -> ijl', L_cholesky, z_norm[:, :, None])[:, :, 0]

@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 from multiprocessing import Pool
 import time
+import jax
+from jax import config
+config.update("jax_enable_x64", True)
 
 ## set default fonts
 plot_params = {'font.family':'STIXGeneral',
@@ -25,9 +28,9 @@ matplotlib.rcParams.update(plot_params)
 class LISA(LISAdata, Model):
 
     '''
-    Generic class for getting data and setting up the prior space
-    and likelihood. This is tuned for ISGWB analysis at the moment
-    but it should not be difficult to modify for other use cases.
+    
+    Generic class for getting data and setting up the prior space and likelihood. 
+    
     '''
 
     def __init__(self,  params, inj):
@@ -128,8 +131,18 @@ class LISA(LISAdata, Model):
         self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
 
         ## create time-domain contribution from each injection component that isn't noise
-        for component in self.Injection.sgwb_component_names:
-            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component])
+        print("Simulating SGWB contributions...")
+        
+        ## set branching keys to ensure multi-sgwb independence
+        if 'seed' in self.params.keys():
+            rng_seed = np.int32(self.params['seed'])
+        else:
+            rng_seed = np.random.randint(int(1e9),dtype='int32')
+        rng = np.random.default_rng(rng_seed)
+        keys = rng.integers(int(1e9),size=len(self.Injection.sgwb_component_names),dtype='int32')
+        
+        for component, key in zip(self.Injection.sgwb_component_names,keys):
+            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key=key)
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
 
             # Add gravitational-wave time series to noise time-series

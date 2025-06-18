@@ -634,7 +634,7 @@ class fast_geometry(sph_geometry):
         
         ## the parallel implementation still has a lot of overhead due to needing to pickle functions and passing them to the threads
         ## unclear if the effects of this will be noticible at scale
-        print("Computing LISA response functionss...")
+        print("Computing LISA response functions...")
         if self.parallel:
             with Pool(self.nthreads) as pool:
                 result = pool.map(self.frequency_response_wrapper,idx)
