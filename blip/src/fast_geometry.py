@@ -385,7 +385,7 @@ class fast_geometry(sph_geometry):
                 self.unique_responses[i] = 4 * self.unique_responses[i] * (np.sin(2*self.f0[None, None, :, None]))**2
             elif self.unique_responses[i].ndim == 5:
                 for jj in range(self.f0.size):
-                    self.unique_responses[i][:,:,jj,:,:] = 4 * self.unique_responses[i][:,:,jj,:,:] * (np.sin(2*self.f0))**2
+                    self.unique_responses[i][:,:,jj,:,:] = 4 * self.unique_responses[i][:,:,jj,:,:] * (np.sin(2*self.f0[jj]))**2
 #                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
             else:
                 raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
