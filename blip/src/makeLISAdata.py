@@ -32,6 +32,8 @@ class LISAdata():
             print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
+        self.gpu = True
+        xp = jnp
             
     ## Method for reading frequency domain spectral data if given in an npz file
     def read_spectrum(self):
@@ -100,7 +102,11 @@ class LISAdata():
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
         for ii in tqdm(range(self.Injection.nsplice)):
             ## move frequency to be the zeroth-axis, then cholesky decomp
-            L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
+            ## this sometimes breaks on GPU for unclear reasons, hence the try/except
+            try:
+                L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
+            except:
+                L_cholesky = norms[:, None, None] *  xp.array(np.linalg.cholesky(np.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0)))
             
             ## generate standard normal complex data first
             if self.gpu:
