@@ -719,11 +719,11 @@ class fast_geometry(sph_geometry):
 
 
 
-def calculate_response_functions(Model_obj):
+def get_model_responses(Model_obj):
     '''
     Wrapper function to call methods for computing the response function.
     
-    This exists so that the methods in question can be easily jettisoned when wrapper the Model object in JAX JIT compilation.
+    This exists so that the methods in question can be easily jettisoned when the Model object in JAX JIT compilation.
     
     '''
     ## Having initialized all the components, now compute the LISA response functions
