@@ -201,7 +201,8 @@ class LISA(LISAdata, Model):
         f0_data = self.fdata/(2*fstar)
         fast_rx = fast_geometry(self.params)
         fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.Injection.components[cmn] for cmn in self.Injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
-        
+        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+        del fast_rx
         return
     
     def compute_inj_fdata_spectra(self):

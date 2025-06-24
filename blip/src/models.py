@@ -2415,6 +2415,8 @@ class Model():
         fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
         t2 = time.time()
         print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+        del fast_rx
         
         ## update colors as needed
         catch_color_duplicates(self)
@@ -2576,6 +2578,8 @@ class Injection():#geometry,sph_geometry):
         fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.components[cmn] for cmn in self.sgwb_component_names],self.params['tdi_lev'])
         t2 = time.time()
         print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
+        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+        del fast_rx
         
         ## initialize default plotting lower ylim
         self.plot_ylim = None

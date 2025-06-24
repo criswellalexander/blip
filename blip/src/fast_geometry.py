@@ -11,6 +11,7 @@ import healpy as hp
 from scipy.special import sph_harm
 from blip.src.sph_geometry import sph_geometry
 from tqdm import tqdm
+import os
 
 
 
@@ -55,6 +56,9 @@ class fast_geometry(sph_geometry):
             self.gpu = False
             xp = np
         
+        ## shared memory handling
+        if self.gpu and os.environ['TF_FORCE_UNIFIED_MEMORY']:
+            self.shared_memory = True
 
 
     def lisa_orbits(self, tsegmid):
@@ -220,9 +224,11 @@ class fast_geometry(sph_geometry):
         
         ## generically assign the frequency slice to each unique response
         ## the '...' indexing allows this to handle both 3 x 3 x f x t and 3 x 3 x f x t x n response shapes
-        if self.gpu:
+        if self.shared_memory:
             for jj in range(len(self.unique_responses)):
-#                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+        elif self.gpu:
+            for jj in range(len(self.unique_responses)):
                 self.unique_responses[jj][:,:,ii,...] = np.array(Rf[jj])
         else:
             for jj in range(len(self.unique_responses)):
@@ -379,17 +385,28 @@ class fast_geometry(sph_geometry):
         Compute the LISA response functions for the XYZ Time-Delay Interferometry channels from the Michelson channels.
         
         '''
+        if self.shared_memory:
+            for i in range(len(self.unique_responses)):
+                if self.unique_responses[i].ndim == 4:
+                    self.unique_responses[i] = 4 * self.unique_responses[i] * (xp.sin(2*self.f0[None, None, :, None]))**2
+                elif self.unique_responses[i].ndim == 5:
+                    for jj in range(self.f0.size):
+                        self.unique_responses[i] = self.unique_responses[i].at[:,:,jj,:,:].set(4 * self.unique_responses[i][:,:,jj,:,:] * (xp.sin(2*self.f0[jj]))**2)
+    #                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
+                else:
+                    raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
         
-        for i in range(len(self.unique_responses)):
-            if self.unique_responses[i].ndim == 4:
-                self.unique_responses[i] = 4 * self.unique_responses[i] * (np.sin(2*self.f0[None, None, :, None]))**2
-            elif self.unique_responses[i].ndim == 5:
-                for jj in range(self.f0.size):
-                    self.unique_responses[i][:,:,jj,:,:] = 4 * self.unique_responses[i][:,:,jj,:,:] * (np.sin(2*self.f0[jj]))**2
-#                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
-            else:
-                raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
-        
+        else:
+            for i in range(len(self.unique_responses)):
+                if self.unique_responses[i].ndim == 4:
+                    self.unique_responses[i] = 4 * self.unique_responses[i] * (np.sin(2*self.f0[None, None, :, None]))**2
+                elif self.unique_responses[i].ndim == 5:
+                    for jj in range(self.f0.size):
+                        self.unique_responses[i][:,:,jj,:,:] = 4 * self.unique_responses[i][:,:,jj,:,:] * (np.sin(2*self.f0[jj]))**2
+    #                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
+                else:
+                    raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
+            
         return
     
     
@@ -425,10 +442,15 @@ class fast_geometry(sph_geometry):
         RAT = (1/9) * (2*RXX - RYY - RZZ + 2*RXY - np.conj(RXY) + 2*RXZ - np.conj(RXZ) - RYZ - np.conj(RYZ))
 
         RET = (1/(3*np.sqrt(3))) * (RZZ - RYY - RYZ + np.conj(RYZ) + np.conj(RXZ) - np.conj(RXY))
-
-        aet_response_mat = np.array([ [RAA, RAE, RAT] , \
-                                    [np.conj(RAE), REE, RET], \
-                                    [np.conj(RAT), np.conj(RET), RTT] ])
+        
+        if self.shared_memory:
+            aet_response_mat = xp.array([ [RAA, RAE, RAT] , \
+                                        [xp.conj(RAE), REE, RET], \
+                                        [xp.conj(RAT), xp.conj(RET), RTT] ])
+        else:
+            aet_response_mat = np.array([ [RAA, RAE, RAT] , \
+                                        [np.conj(RAE), REE, RET], \
+                                        [np.conj(RAT), np.conj(RET), RTT] ])
 
         return aet_response_mat
     
@@ -629,8 +651,13 @@ class fast_geometry(sph_geometry):
                         
                         
         self.wrappers = unique_wrappers
-        ## we always want to keep the full array on CPU, so use numpy
-        self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
+        
+        ## if we are using a device with shared RAM (CPU+GPU), we can allow the response arrays to be jax.numpy arrays
+        ## otherwise we want to keep the full array on CPU, so use numpy
+        if self.shared_memory:
+            self.unique_responses = [xp.zeros(shape,dtype='complex128') for shape in unique_shapes]
+        else:
+            self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
         
         
         
