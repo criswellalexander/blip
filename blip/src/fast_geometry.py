@@ -726,6 +726,7 @@ def get_model_responses(Model_obj):
     This exists so that the methods in question can be easily jettisoned when the Model object in JAX JIT compilation.
     
     '''
+    print("got here now")
     ## Having initialized all the components, now compute the LISA response functions
     t1 = time.time()
     fast_rx = fast_geometry(Model_obj.params)
