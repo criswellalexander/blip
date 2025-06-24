@@ -12,6 +12,7 @@ from scipy.special import sph_harm
 from blip.src.sph_geometry import sph_geometry
 from tqdm import tqdm
 import os
+import time
 
 
 
@@ -718,7 +719,22 @@ class fast_geometry(sph_geometry):
 
 
 
-
+def calculate_response_functions(Model_obj):
+    '''
+    Wrapper function to call methods for computing the response function.
+    
+    This exists so that the methods in question can be easily jettisoned when wrapper the Model object in JAX JIT compilation.
+    
+    '''
+    ## Having initialized all the components, now compute the LISA response functions
+    t1 = time.time()
+    fast_rx = fast_geometry(Model_obj.params)
+    fast_rx.calculate_response_functions(Model_obj.f0,Model_obj.tsegmid,[Model_obj.submodels[smn] for smn in Model_obj.submodel_names if smn !='noise'],Model_obj.params['tdi_lev'])
+    t2 = time.time()
+    print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
+    ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+    del fast_rx
+    return
 
 
 

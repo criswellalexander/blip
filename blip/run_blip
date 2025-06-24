@@ -6,7 +6,7 @@ import sys, os, shutil, configparser, subprocess
 sys.path.append(os.getcwd()) ## this lets python find src
 from blip.src.makeLISAdata import LISAdata
 from blip.src.models import Model, Injection
-from blip.src.fast_geometry import fast_geometry
+from blip.src.fast_geometry import fast_geometry, calculate_response_functions
 from blip.src.utils import ensure_color_matching
 from blip.tools.plotmaker import cornermaker
 from blip.tools.plotmaker import mapmaker
@@ -53,6 +53,9 @@ class LISA(LISAdata, Model):
             # Set up the Bayes class
             print("Building Bayesian model...")
             self.Model = Model(params,inj,self.fdata,self.f0,self.tsegmid,self.rmat)
+            
+            ## compute response functions
+            calculate_response_functions(self.Model)
             
             # make sure matching injections/models have matching colors
             if not self.params['load_data']:

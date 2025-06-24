@@ -2418,9 +2418,6 @@ class Model():
 #        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
 #        del fast_rx
         
-        ## Having initialized all the components, now compute the LISA response functions
-        self.calculate_response_functions()
-        
         ## update colors as needed
         catch_color_duplicates(self)
         
@@ -2429,22 +2426,6 @@ class Model():
         
         return
     
-    def calculate_response_functions(self):
-        '''
-        Wrapper function to call methods for computing the response function.
-        
-        This exists so that the methods in question can be easily jettisoned when wrapper the Model object in JAX JIT compilation.
-        
-        '''
-        ## Having initialized all the components, now compute the LISA response functions
-        t1 = time.time()
-        fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
-        t2 = time.time()
-        print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
-        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
-        del fast_rx
-        return
     
 #    @jax.jit
     def prior(self,unit_theta):
