@@ -2437,13 +2437,9 @@ class Model():
         
         '''
         ## Having initialized all the components, now compute the LISA response functions
-        if self.inj['parallel_inj'] and self.inj['response_nthread']>1:
-            rx_nthreads = self.inj['response_nthread']
-        else:
-            rx_nthreads = 1
         t1 = time.time()
-        fast_rx = fast_geometry(self.params,nthreads=rx_nthreads)
-        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.components[cmn] for cmn in self.sgwb_component_names],self.params['tdi_lev'])
+        fast_rx = fast_geometry(self.params)
+        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
         t2 = time.time()
         print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
         ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
