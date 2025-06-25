@@ -2183,7 +2183,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         summ_response_mat (array) : the sky-integrated response (3 x 3 x frequency x time)
         
         '''
-        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
+        ## sacrifice einsum efficiency for memory usage here
+        ## due to the extreme memory requirement of the pixel-basis unconvolved anisotropic responses
+        convolved_response = jnp.zeros(self.response_mat.shape[:-1])
+        for ii in range(len(pixelmap)):
+            convolved_response = convolved_response + self.response_mat[:,:,:,:,ii]*pixelmap[ii]
+        return self.dOmega*convolved_response
+    #        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
     
     def process_astro_skymap_injection(self,skymap):
         '''
