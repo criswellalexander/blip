@@ -55,7 +55,6 @@ class LISA(LISAdata, Model):
             self.Model = Model(params,inj,self.fdata,self.f0,self.tsegmid,self.rmat)
             
             ## compute response functions
-            print("got here")
             get_model_responses(self.Model)
             
             # make sure matching injections/models have matching colors
