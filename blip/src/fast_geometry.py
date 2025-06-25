@@ -656,7 +656,9 @@ class fast_geometry(sph_geometry):
         ## if we are using a device with shared RAM (CPU+GPU), we can allow the response arrays to be jax.numpy arrays
         ## otherwise we want to keep the full array on CPU, so use numpy
         if self.shared_memory:
-            self.unique_responses = [xp.zeros(shape,dtype='complex128') for shape in unique_shapes]
+            self.unique_responses = [xp.zeros(shape,dtype='complex128',device=jax.devices('cpu')[0]) for shape in unique_shapes]
+            for urx in self.unique_responses:
+                print(urx.shape)
         else:
             self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
         
