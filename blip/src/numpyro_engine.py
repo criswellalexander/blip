@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import jax
 import numpyro
 from numpyro.infer import MCMC, NUTS
+from numpyro.contrib.nested_sampling import NestedSampler
 from numpyro.distributions import constraints
 import numpyro.distributions as dist
 import pickle, dill
@@ -67,7 +68,7 @@ def numpyro_model_sph(Model):
 class numpyro_engine():
 
     '''
-    Class for interfacing with numpyro sampler. 
+    Class for interfacing with the Numpyro HMC (NUTS) sampler. 
     '''
     
     @classmethod
@@ -241,3 +242,71 @@ class numpyro_engine():
         post_samples = np.array(chain['theta_transformed']).T
         
         return post_samples
+
+
+class numpyro_nested_engine():
+
+    '''
+    Class for interfacing with the Numpyro nested sampling sampler. 
+    '''
+    
+    @classmethod
+    def define_engine(cls, lisaobj, Nsamples, seed, gpu=False):
+        
+        if seed is not None:
+            rng_key = jax.random.PRNGKey(seed)
+        else:
+            raise TypeError("Numpyro sampler requires a defined seed.")
+        
+        constructor_kwargs = {'verbose':True,'parameter_estimation':True, 'num_live_points':800, 'max_samples':10*Nsamples}
+        termination_kwargs = {'dlogZ':1e-4}
+        ## if there are phase parameters, use the sph wrapper
+        if len(lisaobj.Model.blm_phase_idx) > 0:
+            engine = NestedSampler(numpyro_model_sph, constructor_kwargs=constructor_kwargs, termination_kwargs=termination_kwargs)
+        ## otherwise use the standard one
+        else:
+            engine = NestedSampler(numpyro_model, constructor_kwargs=constructor_kwargs, termination_kwargs=termination_kwargs)
+        engine.num_samples = Nsamples
+#        engine = MCMC(kernel,num_warmup=Nburn,num_samples=Nsamples,num_chains=Nthreads,chain_method=chain_method,progress_bar=prog)
+
+        # print npar
+        print("Npar = " + str(lisaobj.Model.Npar))
+
+        return engine, lisaobj.Model.parameters, rng_key
+    
+    @staticmethod
+    def run_engine(engine,lisaModel,rng_key,checkpoint_file):
+        
+        # -------------------- Run HMC sampler ---------------------------
+        print("Beginning sampling...")
+        engine.run(rng_key,lisaModel)
+        print("Sampling complete. Retrieving posterior and plotting results...")
+        ## retrive samples, resample from weighted samples, and reformat
+        _, new_key = jax.random.split(rng_key,2)
+        post_samples = np.array(engine.get_samples(new_key,num_samples=engine.num_samples)['theta_transformed']).T
+        
+        print("Sampling complete. Saving final sampler state to {}".format(checkpoint_file))
+        if dill.pickles(engine):
+            temp_file = checkpoint_file + ".temp"
+            with open(temp_file, "wb") as file:
+                pickle.dump(engine, file)
+            shutil.move(temp_file, checkpoint_file)
+        else:
+            print("Warning: Failed to save final state to checkpoint file, cannot resume sampling later.")
+    
+        
+        return post_samples
+    
+    
+    def load_engine(resume_file):
+        
+        ## load model and parameters from previous checkpoint
+        if os.path.isfile(resume_file):
+            print("Loading interrupted analysis from last checkpoint...")
+            with open(resume_file,'rb') as file:
+                engine = pickle.load(file)
+        else:
+            raise TypeError("Checkpoint file <{}> does not exist. Cannot resume from checkpoint.".format(resume_file))
+    
+        return engine
+    
