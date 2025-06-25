@@ -659,6 +659,7 @@ class fast_geometry(sph_geometry):
             self.unique_responses = [xp.zeros(shape,dtype='complex128',device=jax.devices('cpu')[0]) for shape in unique_shapes]
             for urx in self.unique_responses:
                 print(urx.shape)
+                print("Approx memory usage: {} GB".format(np.prod(urx.shape)*16 / 10**9))
         else:
             self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
         
