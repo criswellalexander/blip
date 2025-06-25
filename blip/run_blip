@@ -758,7 +758,7 @@ def blip(paramsfile='params.ini',resume=False):
     params['sampler'] = str(config.get("run_params", "sampler"))
     
     ## only numpyro has GPU support
-    if N_GPU > 0 and params['sampler']!='numpyro':
+    if N_GPU > 0 and params['sampler'] not in ['numpyro','numpyro_nested']:
         raise ValueError("Only numpyro supports GPU acceleration but N_GPU ({}) > 0 and sampler is {}.".format(N_GPU,params['sampler']))
     
     ## sampler setup and late-time imports to reduce dependencies
