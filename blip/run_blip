@@ -950,7 +950,6 @@ def blip(paramsfile='params.ini',resume=False):
             lisaModel = lisa.Model
             ## remove the functions which calculate responses so these aren't traced by JAX
             if hasattr(lisaModel,"calculate_response_functions"):
-                print("got here")
                 delattr(lisaModel,"calculate_response_functions")
             
         else:
