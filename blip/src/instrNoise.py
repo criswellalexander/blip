@@ -189,7 +189,7 @@ class instrNoise():
         '''
 
         # --------------------- Generate Fake Noise -----------------------------
-        print("Simulating instrumental noise ...")
+        print("Simulating instrumental noise...")
 
        # speed of light
         cspeed = 3e8 #m/s

@@ -800,7 +800,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
                 
-                self.spatial_parameters = [r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$z_{\mathrm{h}}$']
                 self.prior = self.mw1parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -835,7 +835,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
-                self.spatial_parameters = [r'$r_\mathrm{h}$',r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$r_{\mathrm{h}}$',r'$z_{\mathrm{h}}$']
                 self.prior = self.mw2parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -860,10 +860,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ## (we need this in the multi-model or duplicate model case)
         if suffix != '':
             if injection:
-                updated_truevals = {parameter+suffix:self.truevals[parameter] for parameter in self.parameters}
+                updated_truevals = {parameter[:-1]+'\ '+suffix[1:]:self.truevals[parameter] for parameter in self.parameters}
                 self.truevals = updated_truevals
-            updated_spectral_parameters = [parameter+suffix for parameter in self.spectral_parameters]
-            updated_spatial_parameters = [parameter+suffix for parameter in self.spatial_parameters]
+            updated_spectral_parameters = [parameter[:-1]+'\ '+suffix[1:] for parameter in self.spectral_parameters]
+            updated_spatial_parameters = [parameter[:-1]+'\ '+suffix[1:] for parameter in self.spatial_parameters]
             updated_parameters = updated_spectral_parameters+updated_spatial_parameters
             if len(updated_parameters) != len(self.parameters):
                 raise ValueError("If you've added a new variety of parameters above, you'll need to update this bit of code too!")
@@ -1691,7 +1691,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -2*theta[0] - 7
+        log_omega0 = -3*theta[0] - 7
         log_fcut = -0.7*theta[1] - 2.4
         log_fscale = -2*theta[2] - 2
         
@@ -1723,7 +1723,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 6
+        log_omega0 = -3*theta[1] - 7
         log_fcut = -0.7*theta[2] - 2.4
         
         
@@ -1754,7 +1754,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 6
+        log_omega0 = -3*theta[1] - 7
         log_fcut = -0.7*theta[2] - 2.4
         log_fscale = -2*theta[3] - 2
         
@@ -2183,7 +2183,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         summ_response_mat (array) : the sky-integrated response (3 x 3 x frequency x time)
         
         '''
-        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
+        ## sacrifice einsum efficiency for memory usage here
+        ## due to the extreme memory requirement of the pixel-basis unconvolved anisotropic responses
+        convolved_response = jnp.zeros(self.response_mat.shape[:-1])
+        for ii in range(len(pixelmap)):
+            convolved_response = convolved_response + self.response_mat[:,:,:,:,ii]*pixelmap[ii]
+        return self.dOmega*convolved_response
+    #        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
     
     def process_astro_skymap_injection(self,skymap):
         '''
@@ -2410,17 +2416,22 @@ class Model():
         self.parameters['all'] = all_parameters
         
         ## Having initialized all the components, now compute the LISA response functions
-        t1 = time.time()
-        fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
-        t2 = time.time()
-        print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+#        t1 = time.time()
+#        fast_rx = fast_geometry(self.params)
+#        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
+#        t2 = time.time()
+#        print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+#        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+#        del fast_rx
         
         ## update colors as needed
         catch_color_duplicates(self)
         
         ## assign reference to data for use in likelihood
         self.rmat = rmat
+        
+        return
+    
     
 #    @jax.jit
     def prior(self,unit_theta):
@@ -2559,10 +2570,7 @@ class Injection():#geometry,sph_geometry):
         ## parallelization has been depreciated now that the response function calculations are handled elsewhere
         for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
             print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-            t1 = time.time()
             cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
-            t2 = time.time()
-            print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
             self.components[component_name] = cm
             self.truevals[component_name] = cm.truevals
     

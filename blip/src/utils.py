@@ -66,7 +66,7 @@ def gen_suffixes(names):
                  'fixedgalaxy':{'abbrv':'G','count':1},
                  'popmap':{'abbrv':'PM','count':1}} ## having galaxy and fixedgalaxy both map to 'G' is a skosh hacky but solves a later problem and shouldn't cause other issues
     
-    suffixes = [r"  $\\mathrm{[" for i in range(len(names))]
+    suffixes = [r"$\\mathrm{[" for i in range(len(names))]
     
     ## find duplicates and count them
     dupc = {end:end_lst.count(end) for end in end_lst}
