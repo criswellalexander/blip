@@ -97,7 +97,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             
         ## handle & return noise case in bespoke fashion, as it is quite different from the signal models
         if submodel_name == 'noise':
-            self.spectral_parameters = [r'$\log_{10} (N_p)$'+suffix, r'$\log_{10} (N_a)$'+suffix]
+            self.spectral_parameters = [r'$\\log_{10} (N_p)$'+suffix, r'$\\log_{10} (N_a)$'+suffix]
             self.spatial_parameters = []
             self.parameters = self.spectral_parameters
             self.Npar = 2
@@ -127,8 +127,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.cov = self.compute_cov_noise
             else:
                 ## truevals
-                self.truevals[r'$\log_{10} (N_p)$'] = self.injvals['log_Np']
-                self.truevals[r'$\log_{10} (N_a)$'] = self.injvals['log_Na']
+                self.truevals[r'$\\log_{10} (N_p)$'] = self.injvals['log_Np']
+                self.truevals[r'$\\log_{10} (N_a)$'] = self.injvals['log_Na']
                 ## save the frozen noise spectra
                 self.frozen_spectra = self.instr_noise_spectrum(self.fs,self.f0,Np=10**self.injvals['log_Np'],Na=10**self.injvals['log_Na'])
             
@@ -188,24 +188,24 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         ## assignment of spectrum
         if self.spectral_model_name == 'powerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$']
             self.omegaf = self.powerlaw_spectrum
             self.fancyname = "Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.powerlaw_prior
             else:
-                self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
         elif self.spectral_model_name == 'twothirdspowerlaw':
             ## it may be worth implementing a more general fixed powerlaw model
             ## but this suffices for investigating the effects of the stellar-origin binary background
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
-            self.fancyname = r'$\alpha=2/3$'+" Power Law"+submodel_count
+            self.fancyname = r'$\\alpha=2/3$'+" Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.fixedpowerlaw_prior
             else:
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
                 
         elif self.spectral_model_name == 'fixedalphapowerlaw':
             if injection:
@@ -213,25 +213,25 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## ensure alpha value is provided
             if 'alpha' not in self.fixedvals.keys():
                 raise ValueError("The 'fixedalphapowerlaw' submodel requires the following parameters to be provided to the fixedvals dict: alpha.")
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$']
             self.omegaf = self.fixedpowerlaw_spectrum
-            self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
+            self.fancyname = r'$\\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Power Law"+submodel_count
             self.spectral_prior = self.fixedpowerlaw_prior
         
         elif self.spectral_model_name == 'brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha_1$',r'$\\log_{10} (\\Omega_{\\rm ref})$',r'$\\alpha_2$',r'$\\log_{10} (f_{\\rm break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.broken_powerlaw_prior
             else:
-                self.truevals[r'$\alpha_1$'] = self.injvals['alpha1']
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
-                self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
-                self.truevals[r'$\log_{10} (f_{\rm break})$'] = self.injvals['log_fbreak']
+                self.truevals[r'$\\alpha_1$'] = self.injvals['alpha1']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\alpha_2$'] = self.injvals['alpha2']
+                self.truevals[r'$\\log_{10} (f_{\\rm break})$'] = self.injvals['log_fbreak']
         
         elif self.spectral_model_name == 'fixedalpha1brokenpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$',r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$',r'$\\alpha_2$',r'$\\log_{10} (f_{\\rm break})$',r'$\\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1_spectrum
             self.fancyname = "Broken Power Law"+submodel_count
             if not injection:
@@ -239,14 +239,14 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 if 'alpha_1' not in self.fixedvals.keys():
                     raise KeyError("Fixed-alpha_1 broken power law spectral model selected, but no low-frequeny slope parameter (alpha_1) was provided to the fixedvals dict.")
             else:
-                self.fixedvals[r'$\alpha_1$'] = self.injvals['alpha1']
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
-                self.truevals[r'$\alpha_2$'] = self.injvals['alpha2']
-                self.truevals[r'$\log_{10} (f_{\rm break})$'] = self.injvals['log_fbreak']
-                self.truevals[r'$\delta$'] = self.injvals['delta']
+                self.fixedvals[r'$\\alpha_1$'] = self.injvals['alpha1']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\alpha_2$'] = self.injvals['alpha2']
+                self.truevals[r'$\\log_{10} (f_{\\rm break})$'] = self.injvals['log_fbreak']
+                self.truevals[r'$\\delta$'] = self.injvals['delta']
         
         elif self.spectral_model_name == 'truncatedpowerlaw':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$', r'$\\log_{10} (f_{\\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "Truncated Power Law"+submodel_count
             if not injection:
@@ -255,24 +255,24 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     self.fixedvals['log_fscale'] = np.log10(4e-4)
                 self.spectral_prior = self.truncated_powerlaw_3par_prior
             else:
-                self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
-                self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
-                self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = np.log10(4e-4)
+                self.truevals[r'$\\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\log_{10} (f_{\\mathrm{cut}})$'] = self.injvals['log_fcut']
+                self.truevals[r'$\\log_{10} (f_{\\mathrm{scale}})$'] = np.log10(4e-4)
                 ## this is a bit hacky but oh well. Solves an issue that comes up if you use the 3par TPL for an injection.
                 self.fixedvals = {'log_fscale':np.log10(4e-4)}
         
         elif self.spectral_model_name == 'truncatedpowerlaw4par':
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$', r'$\\log_{10} (f_{\\mathrm{cut}})$',r'$\\log_{10} (f_{\\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "4-Parameter Truncated Power Law"+submodel_count
             if not injection:
                 self.spectral_prior = self.truncated_powerlaw_4par_prior
             else:
-                self.truevals[r'$\alpha$'] = self.injvals['alpha']
-                self.truevals[r'$\log_{10} (\Omega_{\rm ref})$'] = self.injvals['log_omega0']
-                self.truevals[r'$\log_{10} (f_{\mathrm{cut}})$'] = self.injvals['log_fcut']
-                self.truevals[r'$\log_{10} (f_{\mathrm{scale}})$'] = self.injvals['log_fscale']
+                self.truevals[r'$\\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$\\log_{10} (\\Omega_{\\rm ref})$'] = self.injvals['log_omega0']
+                self.truevals[r'$\\log_{10} (f_{\\mathrm{cut}})$'] = self.injvals['log_fcut']
+                self.truevals[r'$\\log_{10} (f_{\\mathrm{scale}})$'] = self.injvals['log_fscale']
                 
         elif self.spectral_model_name == 'fixedtruncatedpowerlaw':
             self.fixed_spec = True
@@ -289,7 +289,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the MW foreground
             # it is a truncated power law with alpha = 2/3 and fscale = 4e-4
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$', r'$\\log_{10} (f_{\\mathrm{cut}})$',r'$\\log_{10} (f_{\\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -304,7 +304,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 3-parameter truncated power law with astrophysically-motivated prior bounds
             # fscale parameter is fixed
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$', r'$\\log_{10} (f_{\\mathrm{cut}})$']
             self.omegaf = self.truncated_powerlaw_3par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -318,7 +318,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         elif self.spectral_model_name == 'mwspec4par':
             ## this is a more flexible spectral model tailored to analyses of the MW foreground
             # it is a 4-parameter truncated power law with astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$', r'$\\log_{10} (f_{\\mathrm{cut}})$',r'$\\log_{10} (f_{\\mathrm{scale}})$']
             self.omegaf = self.truncated_powerlaw_4par_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -331,7 +331,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a variation of the tanh-truncated foreground, but with
             ## additional, time-dependent shape parameters due to subtraction of resolved systems
             ## for the BLIP implementation, it has been recast into Omega_GW space
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10}A$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10}A$']
             self.omegaf = self.robson19_foreground_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -350,7 +350,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.injvals['T_obs'])
                     self.truevals |= shape_fixedvals
                 
-                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                self.truevals[r'$\\log_{10}A$'] = jnp.log10(self.injvals['A'])
                 self.fixedvals = self.truevals
             
         elif self.spectral_model_name == 'robson19foregroundvaried':
@@ -358,7 +358,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a variation of the tanh-truncated foreground, but with
             ## additional, time-dependent shape parameters due to subtraction of resolved systems
             ## for the BLIP implementation, it has been recast into Omega_GW space
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$',r'$\log_{10}A$',r'$\log_{10}f_{\rm knee}$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$',r'$\\log_{10}A$',r'$\\log_{10}f_{\\rm knee}$']
             self.omegaf = self.robson19_foreground_varied_spectrum
             self.fancyname = "MW Foreground"+submodel_count
             if not injection:
@@ -377,13 +377,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.truevals['T_obs'])
                     self.truevals |= shape_fixedvals
             
-                self.truevals[r'$\alpha$'] = self.injvals['alpha']
+                self.truevals[r'$\\alpha$'] = self.injvals['alpha']
                 self.truevals[r'$A$'] = self.injvals['A']
                 if 'fknee' in self.injvals.keys():
-                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = jnp.log10(self.injvals['fknee'])
+                    self.truevals[r'$\\log_{10}f_{\\rm knee}$'] = jnp.log10(self.injvals['fknee'])
                 elif 'log_fknee' in self.injvals.keys():
-                    self.truevals[r'$\log_{10}f_{\rm knee}$'] = self.injvals['log_fknee']
-                self.truevals[r'$\log_{10}A$'] = jnp.log10(self.injvals['A'])
+                    self.truevals[r'$\\log_{10}f_{\\rm knee}$'] = self.injvals['log_fknee']
+                self.truevals[r'$\\log_{10}A$'] = jnp.log10(self.injvals['A'])
                 self.fixedvals = self.truevals
             
         
@@ -391,7 +391,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with alpha_1 = 2/3
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']#,r'$\delta$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$',r'$\\alpha_2$',r'$\\log_{10} (f_{\\rm break})$']#,r'$\\delta$']
             self.omegaf = self.broken_powerlaw_fixed_a1delta_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -403,7 +403,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is a spectral model tailored to analyses of the LMC SGWB
             # it is a broken power law with both alphas free
             # and astrophysically-motivated prior bounds
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$',r'$\log_{10} (\Omega_{\rm ref})$',r'$\alpha_2$',r'$\log_{10} (f_{\rm break})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha_1$',r'$\\log_{10} (\\Omega_{\\rm ref})$',r'$\\alpha_2$',r'$\\log_{10} (f_{\\rm break})$']
             self.omegaf = self.broken_powerlaw_spectrum
             self.fancyname = "LMC Spectrum"+submodel_count
             if not injection:
@@ -414,7 +414,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## spectral model tailored to analyses of the SOBBH ISGWB
             ## a fixed alpha=2/3 power law
             ## with astrophysical priors
-            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\log_{10} (\\Omega_{\\rm ref})$']
             self.omegaf = self.twothirdspowerlaw_spectrum
             self.fancyname = "SOBBH Power law"+submodel_count
             if not injection:
@@ -426,7 +426,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is the power law model with a constrained upper bound on its amplitude prior
             ## useful when performing spectral separation of an e.g., cosmological background
             ## from the higher-amplitude SOBBH background
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+            self.spectral_parameters = self.spectral_parameters + [r'$\\alpha$', r'$\\log_{10} (\\Omega_{\\rm ref})$']
             self.omegaf = self.powerlaw_spectrum
             self.fancyname = "Power Law"+submodel_count
             if not injection:
@@ -458,7 +458,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         if self.spatial_model_name == 'isgwb':
             ## plotting stuff
             self.fancyname = "Isotropic "+self.fancyname
-            self.subscript = r"_{\mathrm{I}}"
+            self.subscript = r"_{\\mathrm{I}}"
             self.color='darkorange'
             self.has_map = False
             self.fullsky = True
@@ -490,7 +490,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             
             ## plotting stuff
             self.fancyname = "Anisotropic "+self.fancyname
-            self.subscript = r"_{\mathrm{A}}"
+            self.subscript = r"_{\\mathrm{A}}"
             self.color = 'teal'
             self.has_map = True
             self.fullsky = True
@@ -562,11 +562,11 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## model-specific quantities
             if self.spatial_model_name == 'galaxy':
                 ## store the high-level MW truevals for the hierarchical analysis
-                self.truevals[r'$r_{\mathrm{h}}$'] = self.injvals['rh']
-                self.truevals[r'$z_{\mathrm{h}}$'] = self.injvals['zh']
+                self.truevals[r'$r_{\\mathrm{h}}$'] = self.injvals['rh']
+                self.truevals[r'$z_{\\mathrm{h}}$'] = self.injvals['zh']
                 ## plotting stuff
                 self.fancyname = "Galactic Foreground"
-                self.subscript = r"_{\mathrm{G}}"
+                self.subscript = r"_{\\mathrm{G}}"
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(self.injvals['rh'],self.injvals['zh'],self.params['nside'])
@@ -576,21 +576,21 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             elif self.spatial_model_name == 'lmc':
                 ## plotting stuff
                 self.fancyname = "LMC"
-                self.subscript = r"_{\mathrm{LMC}}"
+                self.subscript = r"_{\\mathrm{LMC}}"
                 self.color = 'darkmagenta'
                 ## generate skymap
                 self.skymap = astro.generate_sdg(self.params['nside']) ## sdg defaults are for the LMC
             elif self.spatial_model_name == 'dwarfgalaxy':
                 ## plotting stuff
                 self.fancyname = "Dwarf Galaxy"+submodel_count
-                self.subscript = r"_{\mathrm{DG}}"
+                self.subscript = r"_{\\mathrm{DG}}"
                 self.color = 'maroon'
                 ## generate skymap
                 self.skymap = astro.generate_sdg(self.params['nside'],ra=self.injvals['sdg_RA'], dec=self.injvals['sdg_DEC'], D=self.injvals['sdg_dist'], r=self.injvals['sdg_rad'], N=self.injvals['sdg_N'])
             elif self.spatial_model_name == 'pointsource':
                 ## plotting stuff
                 self.fancyname = "Point Source"+submodel_count
-                self.subscript = r"_{\mathrm{1P}}"
+                self.subscript = r"_{\\mathrm{1P}}"
                 self.color = 'forestgreen'
                 ## generate skymap
                 ## some flexibility, can be defined in either (RA,DEC) or (theta,phi)
@@ -606,7 +606,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             elif self.spatial_model_name == 'pointsources':
                 ## plotting stuff
                 self.fancyname = "Multiple Point Sources"+submodel_count
-                self.subscript = r"_{\mathrm{NP}}"
+                self.subscript = r"_{\\mathrm{NP}}"
                 self.color = 'forestgreen'
                 ## generate skymap
                 ## some flexibility, can be defined in either (RA,DEC) or (theta,phi)
@@ -623,7 +623,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## revisit this when I have duplicates sorted, maybe unnecessary (could just have 2x point source injection components)
                 ## plotting stuff
                 self.fancyname = "Two Point Sources"+submodel_count
-                self.subscript = r"_{\mathrm{2P}}"
+                self.subscript = r"_{\\mathrm{2P}}"
                 self.color = 'gold'
                 ## generate skymap
                 self.skymap = astro.generate_two_point_source(self.injvals['theta_1'],self.injvals['phi_1'],self.injvals['theta_2'],self.injvals['phi_2'],self.params['nside'])
@@ -631,7 +631,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## flag the fact that we have a population skymap
                 self.skypop = True
                 ## plotting stuff
-                self.subscript = r"_{\mathrm{P}}"
+                self.subscript = r"_{\\mathrm{P}}"
                 self.color = 'midnightblue'
                 if self.spectral_model_name != 'population':
                     ## generate population if still needed
@@ -657,7 +657,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     zh = 0.3
                 ## plotting stuff
                 self.fancyname = "Galactic Foreground"
-                self.subscript = r"_{\mathrm{G}}"
+                self.subscript = r"_{\\mathrm{G}}"
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(rh,zh,self.params['nside'])
@@ -668,7 +668,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             elif self.spatial_model_name == 'fixedlmc':
                 ## plotting stuff
                 self.fancyname = "LMC"
-                self.subscript = r"_{\mathrm{LMC}}"
+                self.subscript = r"_{\\mathrm{LMC}}"
                 self.color = 'darkmagenta'
                 ## generate skymap
                 self.skymap = astro.generate_sdg(self.params['nside']) ## sdg defaults are for the LMC
@@ -690,21 +690,21 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     raise ValueError("Using hotpixel spatial model but either no coordinates were provided to the fixedvals dict or invalid notation was used.")
                 ## plotting stuff
                 self.fancyname = "Point Source"
-                self.subscript = r"_{\mathrm{1P}}"
+                self.subscript = r"_{\\mathrm{1P}}"
                 self.color = 'forestgreen'
                 self.skymap = astro.generate_point_source(coord1,coord2,self.params['nside'],convention=convention,pad=True)
                 self.fixed_map = True
             
             elif self.spatial_model_name == 'pixiso':
                 self.fancyname = "Pixel Isotropic"
-                self.subscript = r"_{\mathrm{PI}}"
+                self.subscript = r"_{\\mathrm{PI}}"
                 self.color = 'forestgreen'
                 self.skymap = np.ones(hp.nside2npix(self.params['nside']))
                 self.fixed_map = True
             
             elif self.spatial_model_name == 'popmap':
                 self.fancyname = "Population Skymap"
-                self.subscript = r"_{\mathrm{PM}}"
+                self.subscript = r"_{\\mathrm{PM}}"
                 self.color = 'mediumorchid'
                 popkey = self.fixedvals['pop_id']
                 popdict = self.inj['popdict'][popkey]
@@ -772,7 +772,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## only infers the vertical scale height z_h
                 ## plotting stuff
                 self.fancyname = "1-Parameter Milky Way"
-                self.subscript = r"_{\mathrm{G}}"
+                self.subscript = r"_{\\mathrm{G}}"
                 self.color = 'mediumorchid'
                 self.has_map = True
                 self.fixed_map = False
@@ -800,7 +800,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
                 
-                self.spatial_parameters = [r'$z_{\mathrm{h}}$']
+                self.spatial_parameters = [r'$z_{\\mathrm{h}}$']
                 self.prior = self.mw1parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -808,7 +808,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## model to infer the Milky Way spatial distribution, using a basic 2-parameter model of the Galaxy
                 ## plotting stuff
                 self.fancyname = "2-Parameter Milky Way"
-                self.subscript = r"_{\mathrm{G}}"
+                self.subscript = r"_{\\mathrm{G}}"
                 self.color = 'mediumorchid'
                 self.has_map = True
                 self.fixed_map = False
@@ -835,7 +835,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
-                self.spatial_parameters = [r'$r_{\mathrm{h}}$',r'$z_{\mathrm{h}}$']
+                self.spatial_parameters = [r'$r_{\\mathrm{h}}$',r'$z_{\\mathrm{h}}$']
                 self.prior = self.mw2parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -1087,11 +1087,11 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         '''
         
-        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        alpha_shape = self.fixedvals[r'$\\alpha_{\\rm shape}$']
         beta_shape = self.fixedvals[r'$\beta$']
         kappa = self.fixedvals[r'$\kappa$']
         gamma = self.fixedvals[r'$\gamma$']
-        log_fknee = jnp.log10(self.fixedvals[r'$f_{\rm knee}$'])
+        log_fknee = jnp.log10(self.fixedvals[r'$f_{\\rm knee}$'])
         
         
         Sgw = 10**logA * (fs/self.params['fref'])**(-7/3) * jnp.exp(-fs**alpha_shape + beta_shape*fs*jnp.sin(kappa*fs)) * (1 + jnp.tanh(gamma*(10**log_fknee - fs)))
@@ -1119,7 +1119,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         '''
         
-        alpha_shape = self.fixedvals[r'$\alpha_{\rm shape}$']
+        alpha_shape = self.fixedvals[r'$\\alpha_{\\rm shape}$']
         beta_shape = self.fixedvals[r'$\beta$']
         kappa = self.fixedvals[r'$\kappa$']
         gamma = self.fixedvals[r'$\gamma$']
@@ -2887,7 +2887,7 @@ class Injection():#geometry,sph_geometry):
             
             ## tell healpy to shush
             with log_manager(logging.ERROR):
-                hp.mollview(Omegamap_pix, coord=coord, title=r'Injected pixel map $\Omega (f = 1 mHz)$', unit=r"$\Omega(f= 1mHz)$", cmap=self.params['colormap'])
+                hp.mollview(Omegamap_pix, coord=coord, title=r'Injected pixel map $\\Omega (f = 1 mHz)$', unit=r"$\\Omega(f= 1mHz)$", cmap=self.params['colormap'])
                 hp.graticule()
             
             if save_figures:
@@ -2904,7 +2904,7 @@ class Injection():#geometry,sph_geometry):
             Omegamap_inj = Omega_1mHz * cm.sph_skymap
             ## tell healpy to shush
             with log_manager(logging.ERROR):
-                hp.mollview(Omegamap_inj, coord=coord, title=r'Injected angular distribution map $\Omega (f = 1 mHz)$', unit=r"$\Omega(f= 1mHz)$", cmap=self.params['colormap'])
+                hp.mollview(Omegamap_inj, coord=coord, title=r'Injected angular distribution map $\\Omega (f = 1 mHz)$', unit=r"$\\Omega(f= 1mHz)$", cmap=self.params['colormap'])
                 hp.graticule()
             
             if save_figures:
