@@ -862,8 +862,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             if injection:
                 updated_truevals = {parameter[:-1]+'\ '+suffix[1:]:self.truevals[parameter] for parameter in self.parameters}
                 self.truevals = updated_truevals
-            updated_spectral_parameters = [parameter[:-1]+'\ '+suffix[1:] for parameter in self.spectral_parameters]
-            updated_spatial_parameters = [parameter[:-1]+'\ '+suffix[1:] for parameter in self.spatial_parameters]
+            updated_spectral_parameters = [parameter[:-1]+suffix[1:] for parameter in self.spectral_parameters]
+            updated_spatial_parameters = [parameter[:-1]+suffix[1:] for parameter in self.spatial_parameters]
             updated_parameters = updated_spectral_parameters+updated_spatial_parameters
             if len(updated_parameters) != len(self.parameters):
                 raise ValueError("If you've added a new variety of parameters above, you'll need to update this bit of code too!")
