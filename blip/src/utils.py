@@ -59,6 +59,7 @@ def gen_suffixes(names):
                  'population':{'abbrv':'P','count':1},
                  'hierarchical':{'abbrv':'H','count':1},
                  'lmc':{'abbrv':'LMC','count':1},
+                 'fixedlmc':{'abbrv':'LMC','count':1},
                  'sdg':{'abbrv':'DG','count':1},
                  '1parametermw':{'abbrv':'1MW','count':1},
                  '2parametermw':{'abbrv':'2MW','count':1},
@@ -66,7 +67,7 @@ def gen_suffixes(names):
                  'fixedgalaxy':{'abbrv':'G','count':1},
                  'popmap':{'abbrv':'PM','count':1}} ## having galaxy and fixedgalaxy both map to 'G' is a skosh hacky but solves a later problem and shouldn't cause other issues
     
-    suffixes = [r"$\\mathrm{[" for i in range(len(names))]
+    suffixes = [r"[" for i in range(len(names))]
     
     ## find duplicates and count them
     dupc = {end:end_lst.count(end) for end in end_lst}
@@ -84,11 +85,11 @@ def gen_suffixes(names):
             else:
                 suffixes[i] = ''
         elif dupc[end] == 1:
-            suff_i = suff + shorthand[end]['abbrv'] + ']}$'
-            suffixes[i] = r'%s' %suff_i
+            suffixes[i] = suff + shorthand[end]['abbrv'] + ']'
+#            suffixes[i] = r'%s' %suff_i
         else:
-            suff_i = suff + shorthand[end]['abbrv'] + '_' + str(shorthand[end]['count']) + ']}$'
-            suffixes[i] = r'%s' %suff_i
+            suffixes[i] = suff + shorthand[end]['abbrv'] + '_' + str(shorthand[end]['count']) + ']'
+#            suffixes[i] = r'%s' %suff_i
             shorthand[end]['count'] += 1
 
     return suffixes
