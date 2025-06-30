@@ -84,9 +84,11 @@ def gen_suffixes(names):
             else:
                 suffixes[i] = ''
         elif dupc[end] == 1:
-            suffixes[i] = suff + shorthand[end]['abbrv'] + ']}$'
+            suff_i = suff + shorthand[end]['abbrv'] + ']}$'
+            suffixes[i] = r'%s' %suff_i
         else:
-            suffixes[i] = suff + shorthand[end]['abbrv'] + '_' + str(shorthand[end]['count']) + ']}$'
+            suff_i = suff + shorthand[end]['abbrv'] + '_' + str(shorthand[end]['count']) + ']}$'
+            suffixes[i] = r'%s' %suff_i
             shorthand[end]['count'] += 1
 
     return suffixes
