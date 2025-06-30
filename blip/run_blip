@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from multiprocessing import Pool
 import time
-import jax
+#import jax
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -1008,58 +1008,58 @@ def blip(paramsfile='params.ini',resume=False):
         ## save chain
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
     
-    elif params['sampler'] == 'numpyro_nested':
-        ## create engine
-        Ntotal = params['Nsamples']
-        if not resume:
+#    elif params['sampler'] == 'numpyro_nested':
+#        ## create engine
+#        Ntotal = params['Nsamples']
+#        if not resume:
+#            
+#            ## set initial chain to None
+#            chain = None
+#            
+#            if N_GPU > 0:
+#                use_gpu = True
+#            else:
+#                use_gpu = False
+#            engine, parameters, rng_key = numpyro_nested_engine.define_engine(lisa, Ntotal, params['seed'], gpu=use_gpu)
+#            lisaModel = lisa.Model
+#            ## remove the functions which calculate responses so these aren't traced by JAX
+#            if hasattr(lisaModel,"calculate_response_functions"):
+#                delattr(lisaModel,"calculate_response_functions")
             
-            ## set initial chain to None
-            chain = None
-            
-            if N_GPU > 0:
-                use_gpu = True
-            else:
-                use_gpu = False
-            engine, parameters, rng_key = numpyro_nested_engine.define_engine(lisa, Ntotal, params['seed'], gpu=use_gpu)
-            lisaModel = lisa.Model
-            ## remove the functions which calculate responses so these aren't traced by JAX
-            if hasattr(lisaModel,"calculate_response_functions"):
-                delattr(lisaModel,"calculate_response_functions")
-            
-        else:
-            resume_file = params['out_dir']+'/checkpoint.pickle'
-            engine = numpyro_nested_engine.load_engine(resume_file)
-            with open(params['out_dir'] + '/model.pickle', 'rb') as modfile:
-                lisaModel = pickle.load(modfile)
-            parameters = lisaModel.parameters
-            
-            ## additional samples
-            if params['additional_samples'] is not None:
-                ## new total = old total + additional
-                try:
-                    old_chain = np.loadtxt(params['out_dir'] + "/post_samples.txt")
-                except:
-                    raise ValueError("There is no posterior samples file (post_samples.txt) in the output directory. Did you complete the original run?")
-                
-                print("Run was previously completed and {} additional samples have been requested. Resampling weighted sample chain...".format(params['additional_samples']))
-                Ntotal = N_current + params['additional_samples']
-                engine.num_samples = params['additional_samples']
-                _, _, new_key = jax.random.PRNGKey(seed).split(3)
-                additional_post_samples = np.array(engine.get_samples(new_key,num_samples=params['additional_samples'])['theta_transformed']).T
-                post_samples = np.concatenate((old_chain,additional_post_samples))
-
-        ## run sampler
-        checkpoint_file = params['out_dir']+'/checkpoint.pickle'
-        t1 = time.time()
-        post_samples = numpyro_nested_engine.run_engine(engine,lisaModel,rng_key,checkpoint_file)
-        t2= time.time()
-        print("Elapsed time to converge: {} s".format(t2-t1))
-
-        ## save chain
-        np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
+#        else:
+#            resume_file = params['out_dir']+'/checkpoint.pickle'
+#            engine = numpyro_nested_engine.load_engine(resume_file)
+#            with open(params['out_dir'] + '/model.pickle', 'rb') as modfile:
+#                lisaModel = pickle.load(modfile)
+#            parameters = lisaModel.parameters
+#            
+#            ## additional samples
+#            if params['additional_samples'] is not None:
+#                ## new total = old total + additional
+#                try:
+#                    old_chain = np.loadtxt(params['out_dir'] + "/post_samples.txt")
+#                except:
+#                    raise ValueError("There is no posterior samples file (post_samples.txt) in the output directory. Did you complete the original run?")
+#                
+#                print("Run was previously completed and {} additional samples have been requested. Resampling weighted sample chain...".format(params['additional_samples']))
+#                Ntotal = N_current + params['additional_samples']
+#                engine.num_samples = params['additional_samples']
+#                _, _, new_key = jax.random.PRNGKey(seed).split(3)
+#                additional_post_samples = np.array(engine.get_samples(new_key,num_samples=params['additional_samples'])['theta_transformed']).T
+#                post_samples = np.concatenate((old_chain,additional_post_samples))
+#
+#        ## run sampler
+#        checkpoint_file = params['out_dir']+'/checkpoint.pickle'
+#        t1 = time.time()
+#        post_samples = numpyro_nested_engine.run_engine(engine,lisaModel,rng_key,checkpoint_file)
+#        t2= time.time()
+#        print("Elapsed time to converge: {} s".format(t2-t1))
+#
+#        ## save chain
+#        np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
     
     else:
-        raise TypeError('Unknown sampler model chosen. Only dynesty, numpyro, numpyro_nested, & emcee are supported')
+        raise TypeError('Unknown sampler model chosen. Only dynesty, numpyro, & emcee are supported')
     
 #    
     ## Safely re-save the config pickle, now with the model parameters
