@@ -52,20 +52,20 @@ def gen_suffixes(names):
         suffixes = ['','']
         return suffixes
     ## set up our building blocks and model counts for iterative numbering
-    shorthand = {'noise':{'abbrv':'','count':1},
-                 'fixednoise':{'abbrv':'','count':1},
-                 'isgwb':{'abbrv':'I','count':1},
-                 'sph':{'abbrv':'A','count':1},
-                 'population':{'abbrv':'P','count':1},
-                 'hierarchical':{'abbrv':'H','count':1},
-                 'lmc':{'abbrv':'LMC','count':1},
-                 'fixedlmc':{'abbrv':'LMC','count':1},
-                 'sdg':{'abbrv':'DG','count':1},
-                 '1parametermw':{'abbrv':'1MW','count':1},
-                 '2parametermw':{'abbrv':'2MW','count':1},
-                 'galaxy':{'abbrv':'G','count':1},
-                 'fixedgalaxy':{'abbrv':'G','count':1},
-                 'popmap':{'abbrv':'PM','count':1}} ## having galaxy and fixedgalaxy both map to 'G' is a skosh hacky but solves a later problem and shouldn't cause other issues
+    shorthand = {'noise':{'abbrv':r'','count':1},
+                 'fixednoise':{'abbrv':r'','count':1},
+                 'isgwb':{'abbrv':r'I','count':1},
+                 'sph':{'abbrv':r'A','count':1},
+                 'population':{'abbrv':r'P','count':1},
+                 'hierarchical':{'abbrv':r'H','count':1},
+                 'lmc':{'abbrv':r'LMC','count':1},
+                 'fixedlmc':{'abbrv':r'LMC','count':1},
+                 'sdg':{'abbrv':r'DG','count':1},
+                 '1parametermw':{'abbrv':r'1MW','count':1},
+                 '2parametermw':{'abbrv':r'2MW','count':1},
+                 'galaxy':{'abbrv':r'G','count':1},
+                 'fixedgalaxy':{'abbrv':r'G','count':1},
+                 'popmap':{'abbrv':r'PM','count':1}} ## having galaxy and fixedgalaxy both map to 'G' is a skosh hacky but solves a later problem and shouldn't cause other issues
     
     suffixes = [r"[" for i in range(len(names))]
     
@@ -75,7 +75,7 @@ def gen_suffixes(names):
     ## some handling to prevent things from breaking if the above dict hasn't been updated for a given model
     for end in end_lst:
         if end not in shorthand.keys():
-            shorthand |= {end:{'abbrv':'Mod','count':1}}
+            shorthand |= {end:{'abbrv':r'Mod','count':1}}
     
     ## generate the suffixes by assigning the abbreviated notation and numbering as necessary
     for i, (end,suff) in enumerate(zip(end_lst,suffixes)):
@@ -83,12 +83,12 @@ def gen_suffixes(names):
             if dupc[end] > 1:
                 raise ValueError("Multiple noise injections/models is not supported.")
             else:
-                suffixes[i] = ''
+                suffixes[i] = r''
         elif dupc[end] == 1:
-            suffixes[i] = suff + shorthand[end]['abbrv'] + ']'
+            suffixes[i] = suff + shorthand[end]['abbrv'] + r']'
 #            suffixes[i] = r'%s' %suff_i
         else:
-            suffixes[i] = suff + shorthand[end]['abbrv'] + '_' + str(shorthand[end]['count']) + ']'
+            suffixes[i] = suff + shorthand[end]['abbrv'] + r'_' + str(shorthand[end]['count']) + r']'
 #            suffixes[i] = r'%s' %suff_i
             shorthand[end]['count'] += 1
 

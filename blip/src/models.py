@@ -2887,7 +2887,7 @@ class Injection():#geometry,sph_geometry):
             
             ## tell healpy to shush
             with log_manager(logging.ERROR):
-                hp.mollview(Omegamap_pix, coord=coord, title=r'Injected pixel map $\\Omega (f = 1 mHz)$', unit=r"$\\Omega(f= 1mHz)$", cmap=self.params['colormap'])
+                hp.mollview(Omegamap_pix, coord=coord, title=r'Injected pixel map $\Omega (f = 1 mHz)$', unit=r"$\Omega(f= 1mHz)$", cmap=self.params['colormap'])
                 hp.graticule()
             
             if save_figures:
