@@ -1458,7 +1458,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -2*theta[0] - 9
+        log_omega0  = -2*theta[0] - 11
         
         return [log_omega0]
     
@@ -1797,7 +1797,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -3*theta[0] - 8
+        log_omega0 = -3*theta[0] - 9
         log_fcut = -1*theta[1] - 2
         log_fscale = -1*theta[2] - 3
         
@@ -1828,7 +1828,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -3*theta[0] - 8
+        log_omega0 = -3*theta[0] - 9
         alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
         delta = 0.99*theta[3] + 0.01
@@ -1859,7 +1859,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         
-        log_omega0 = -3*theta[0] - 8
+        log_omega0 = -3*theta[0] - 9
         alpha_2 = 4*theta[1] #+ self.fixedvals['alpha_1'] ## must be greater than alpha_1
         log_fbreak = -1*theta[2] - 2
 
@@ -1890,7 +1890,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Transform to actual priors
         
         alpha_1 = 2*theta[0]
-        log_omega0 = -3*theta[1] - 8
+        log_omega0 = -3*theta[1] - 9
         alpha_2 = 4*theta[2]
         log_fbreak = -1*theta[2] - 2
 
