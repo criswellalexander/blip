@@ -1458,7 +1458,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -3*theta[0] - 11
+        log_omega0  = -2*theta[0] - 11
         
         return [log_omega0]
     
@@ -1486,7 +1486,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha       =  10*theta[0] - 5
-        log_omega0  = -10*theta[1] - 14
+        log_omega0  = -10*theta[1] - 13
         
         return [alpha, log_omega0]
     

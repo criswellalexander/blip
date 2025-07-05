@@ -200,60 +200,60 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
             ## now do the median skymap
             if not skip_median:
                 print("Computing median posterior skymap for submodel {}...".format(submodel_name))
-                
+
                 ## HEALpy is really, REALLY noisy sometimes. This stops that.
                 logger.setLevel(logging.ERROR)
-                
+
                 # median values of the posteriors
                 med_vals = np.median(post_i, axis=0)
-                
+
                 if hasattr(sm,"parameterized_map") and sm.parameterized_map:
                     ## explicitly parameterized spatial analyses
                     ## get Omega(f=1mHz)
                     Omega_1mHz_median = sm.omegaf(1e-3,*med_vals[:sm.spatial_start])
-                    
+
                     ## make map from parameterized model
                     skymap_median = sm.compute_skymap(*med_vals[sm.spatial_start:])
-                    
+
                     ## instantiate, mask, and norm
                     ## this ensures the correct pixel ordering is maintained
                     prob_map_median = np.zeros(npix)
                     prob_map_median[sm.mask_idx] = sm.mask_and_norm_pixel_skymap(skymap_median)
-                    
+
                     Omega_median_map = np.real(Omega_1mHz_median * prob_map_median)
                 else:
                     ## sph. harm. analysis
-                    
+
                     # Omega(f=1mHz)
                     Omega_1mHz_median = sm.omegaf(1e-3,*med_vals[:sm.blm_start])
                     ## blms.
                     blms_median = np.append([1], med_vals[sm.blm_start:])
-                    
+
                     blm_median_vals = sm.blm_params_2_blms(blms_median)
-                
+
                     norm = np.sum(blm_median_vals[0:(sm.lmax + 1)]**2) + np.sum(2*np.abs(blm_median_vals[(sm.lmax + 1):])**2)
-        
+
                     Omega_median_map  =  np.real(Omega_1mHz_median * (1.0/norm) * (hp.alm2map(np.array(blm_median_vals), nside))**2)
-                
+
                 ## save the map array
                 plot_data['map_data']['maps'][submodel_name+'_median'] = Omega_median_map
-                
+
                 hp.mollview(Omega_median_map, coord=coord, cmap=cmap, **med_map_kwargs)
-                
+
                 hp.graticule()
-                
+
                 ## switch logging level back to normal so we get our own status updates
                 logger.setLevel(logging.INFO)
-                
+
                 if saveto is not None:
                     fig_path_base = (saveto + '/{}_post_median_skymap'.format(submodel_name)).replace('//','/')
                 else:
                     fig_path_base = (params['out_dir'] + '/{}_post_median_skymap'.format(submodel_name)).replace('//','/')
-                
+
                 for ext in ['.png','.pdf']:
                     plt.savefig(fig_path_base+ext, dpi=200)
                     logger.info('Median posterior skymap for submodel {} printed as {} file to  {}'.format(submodel_name,ext,fig_path_base+ext))
-            
+
                 plt.close()
             
         

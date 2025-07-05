@@ -60,6 +60,7 @@ class fast_geometry(sph_geometry):
         ## shared memory handling
         if self.gpu and ('TF_FORCE_UNIFIED_MEMORY' in os.environ.keys()) and os.environ['TF_FORCE_UNIFIED_MEMORY']:
             self.shared_memory = True
+            print("Using shared memory.")
         else:
             self.shared_memory = False
 
