@@ -776,7 +776,7 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         N_bins = 35
         lows = np.min(post[:,subset_filt_i],axis=0)
         highs = np.max(post[:,subset_filt_i],axis=0)
-        corner.corner(post[:,subset_filt_i], levels=[0.393,0.864], bins=N_bins,
+        corner.corner(post[:,subset_filt_i], levels=[0.68,0.95,0.997], bins=N_bins,
                       plot_datapoints=False, plot_density=False, fill_contours=True, smooth=smooth,
                       fig=fig, show_titles=False, max_n_ticks=3, color=histcolor)#, labelpad=0.1)
         if knowTrue:
