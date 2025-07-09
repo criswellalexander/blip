@@ -902,6 +902,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--cornersplit', type=str, default=None, help="How to split the corner plots. Default None (one corner plot). Can be 'type' or 'submodel'.")
     
+    parser.add_argument('--cornersmooth', type=float, default=0.75, help="Level of 2D contour smoothing for the corner plots. Default 0.75.")
+
     parser.add_argument('--plotdatadir', type=str, default=None, help="/path/to/plot_data.pickle; where to save the plot data as a pickle file. Defaults to [out_dir]/plot_data.pickle.")
     
     # execute parser
@@ -928,7 +930,7 @@ if __name__ == '__main__':
     if not args.nocorner:
         ## reset the matplotlib style setting
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-        cornermaker(post, params, parameters, inj, Model, Injection=Injection, split_by=args.cornersplit)    
+        cornermaker(post, params, parameters, inj, Model, Injection=Injection, split_by=args.cornersplit, smooth=args.cornersmooth)
     if not args.nofit:
         ## reset the matplotlib style setting
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
