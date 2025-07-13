@@ -426,11 +426,17 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is the power law model with a constrained upper bound on its amplitude prior
             ## useful when performing spectral separation of an e.g., cosmological background
             ## from the higher-amplitude SOBBH background
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
-            self.omegaf = self.powerlaw_spectrum
-            self.fancyname = "Power Law"+submodel_count
             if not injection:
-                self.spectral_prior = self.lowpowerlaw_prior
+                if hasattr(self,"fixedvals") and 'alpha' in self.fixedvals:
+                    self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Low-Amplitude Power Law"+submodel_count
+                    self.omegaf = self.fixedalphapowerlaw_spectrum
+                    self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+                    self.spectral_prior = self.flatlowpowerlaw_prior
+                else:
+                    self.fancyname = "Low-Amplitude Power Law"+submodel_count
+                    self.omegaf = self.powerlaw_spectrum
+                    elf.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+                    self.spectral_prior = self.lowpowerlaw_prior
             else:
                 raise ValueError("lowpowerlaw is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
         
@@ -1490,6 +1496,33 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         
         return [alpha, log_omega0]
     
+    def flatlowpowerlaw_prior(self,theta):
+
+
+        '''
+        Prior function for an isotropic stochastic backgound analysis. Imposes an upper constraint on the prior to aid in spectral separation.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha and log(Omega0)
+
+        '''
+
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        log_omega0  = -11*theta[0] - 12
+
+        return [log_omega0]
+
     def broken_powerlaw_prior(self,theta):
 
 
