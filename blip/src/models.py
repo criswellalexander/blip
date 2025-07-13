@@ -435,7 +435,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 else:
                     self.fancyname = "Low-Amplitude Power Law"+submodel_count
                     self.omegaf = self.powerlaw_spectrum
-                    elf.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+                    self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
                     self.spectral_prior = self.lowpowerlaw_prior
             else:
                 raise ValueError("lowpowerlaw is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
