@@ -429,7 +429,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             if not injection:
                 if hasattr(self,"fixedvals") and 'alpha' in self.fixedvals:
                     self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Low-Amplitude Power Law"+submodel_count
-                    self.omegaf = self.fixedalphapowerlaw_spectrum
+                    self.omegaf = self.fixedpowerlaw_spectrum
                     self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
                     self.spectral_prior = self.flatlowpowerlaw_prior
                 else:
