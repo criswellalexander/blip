@@ -1,5 +1,10 @@
 import numpy as np
+import jax
+import jax.numpy as jnp
 import os
+from tqdm import tqdm
+from jax import config
+config.update("jax_enable_x64", True)
 
 class LISAdata():
 
@@ -13,8 +18,23 @@ class LISAdata():
         self.params = params
         self.inj = inj
         self.armlength = 2.5e9 ## armlength in meters
-
-
+        
+        ## numpy/jax.numpy switch
+        global xp
+        backend = jax.default_backend()
+        if backend == 'gpu':
+            print("GPU detected; performing data simulation on GPU...")
+            self.gpu = True
+            xp = jnp
+        elif backend == 'cpu':
+            print("No GPU detected; performing data simulation on CPU...")
+            self.gpu = False
+            xp = np
+        else:
+            print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
+            self.gpu = False
+            xp = np
+            
     ## Method for reading frequency domain spectral data if given in an npz file
     def read_spectrum(self):
 
@@ -41,8 +61,17 @@ class LISAdata():
 
 
 
-    def add_sgwb_data(self, injmodel, tbreak = 0.0):
+    def add_sgwb_data(self, injmodel, key, tbreak = 0.0):
         
+        '''
+        Function to simulate the SGWB time series, given a spectrum.
+        
+        Arguments
+        --------------------
+        injmodel (Injection component) : The injection component submodel.
+        key (int) : Key for the numpy (or JAX) rng
+        
+        '''
  
         N = self.Injection.Npersplice
         halfN = int(0.5*N)
@@ -55,54 +84,75 @@ class LISAdata():
         injmodel.frozen_spectra = Sgw
         
         ## the spectrum of the frequecy domain gaussian for ifft
-        norms = np.sqrt(self.params['fs']*Sgw*N)/2
+        norms = xp.sqrt(self.params['fs']*Sgw*N)/2
 
         ## index array for one segment
-        t_arr = np.arange(N)
+        t_arr = xp.arange(N)
 
         ## the window for splicing
-        splice_win = np.sin(np.pi * t_arr/N)
-
+        splice_win = xp.sin(xp.pi * t_arr/N)
+            
+        ## create rng, etc.
+        if self.gpu:
+            jax_key = jax.random.key(key)
+        else:
+            numpy_rng = np.random.default_rng(key)
+        
         ## Loop over splice segments
-        for ii in range(self.Injection.nsplice):
+        print("Simulating time-domain data for component '{}'...".format(injmodel.name))
+        for ii in tqdm(range(self.Injection.nsplice)):
             ## move frequency to be the zeroth-axis, then cholesky decomp
-            L_cholesky = norms[:, None, None] *  np.linalg.cholesky(np.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
+            ## this sometimes breaks on GPU for unclear reasons, hence the try/except
+            try:
+                L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
+            except:
+                L_cholesky = norms[:, None, None] *  xp.array(np.linalg.cholesky(np.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0)))
             
             ## generate standard normal complex data first
-            z_norm = np.random.normal(size=(self.Injection.frange.size, 3)) + 1j * np.random.normal(size=(self.Injection.frange.size, 3))
+            if self.gpu:
+                _, jax_key, jax_key_2 = jax.random.split(jax_key,3) ## needed to actually produce a new set of random numbers every time through the loop!
+                z_norm = jax.random.normal(jax_key,shape=(self.Injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.Injection.frange.size, 3))  
+            else:
+                z_norm = numpy_rng.normal(size=(self.Injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.Injection.frange.size, 3))
 
             ## The data in z_norm is rescaled into z_scale using L_cholesky
-            z_scale = np.einsum('ijk, ikl -> ijl', L_cholesky, z_norm[:, :, None])[:, :, 0]
+            z_scale = xp.einsum('ijk, ikl -> ijl', L_cholesky, z_norm[:, :, None])[:, :, 0]
 
             ## The three channels : concatenate with norm at f = 0 to be zero
-            htilda1  = np.concatenate([ [0], z_scale[:, 0]])
-            htilda2  = np.concatenate([ [0], z_scale[:, 1]])
-            htilda3  = np.concatenate([ [0], z_scale[:, 2]])
+            zero_arr = xp.zeros(1)
+            htilda1  = xp.concatenate([ zero_arr, z_scale[:, 0]])
+            htilda2  = xp.concatenate([ zero_arr, z_scale[:, 1]])
+            htilda3  = xp.concatenate([ zero_arr, z_scale[:, 2]])
 
 
             if ii == 0:
                 # Take inverse fft to get time series data
-                h1 = splice_win * np.fft.irfft(htilda1, N)
-                h2 = splice_win * np.fft.irfft(htilda2, N)
-                h3 = splice_win * np.fft.irfft(htilda3, N)
+                h1 = splice_win * xp.fft.irfft(htilda1, N)
+                h2 = splice_win * xp.fft.irfft(htilda2, N)
+                h3 = splice_win * xp.fft.irfft(htilda3, N)
 
             else:
 
                 ## First append half-splice worth of zeros
-                h1 = np.append(h1, np.zeros(halfN))
-                h2 = np.append(h2, np.zeros(halfN))
-                h3 = np.append(h3, np.zeros(halfN))
+                h1 = xp.append(h1, xp.zeros(halfN))
+                h2 = xp.append(h2, xp.zeros(halfN))
+                h3 = xp.append(h3, xp.zeros(halfN))
 
                 ## Then add the new splice segment
-                h1[-N:] = h1[-N:] + splice_win * np.fft.irfft(htilda1, N)
-                h2[-N:] = h2[-N:] + splice_win * np.fft.irfft(htilda2, N)
-                h3[-N:] = h3[-N:] + splice_win * np.fft.irfft(htilda3, N)
+                if self.gpu:
+                    h1 = h1.at[-N:].set(h1[-N:] + splice_win * xp.fft.irfft(htilda1, N))
+                    h2  = h2.at[-N:].set(h2[-N:] + splice_win * xp.fft.irfft(htilda2, N))
+                    h3 = h3.at[-N:].set(h3[-N:] + splice_win * xp.fft.irfft(htilda3, N))
+                else:
+                    h1[-N:] = h1[-N:] + splice_win * xp.fft.irfft(htilda1, N)
+                    h2[-N:] = h2[-N:] + splice_win * xp.fft.irfft(htilda2, N)
+                    h3[-N:] = h3[-N:] + splice_win * xp.fft.irfft(htilda3, N)
 
 
         ## remove the first half and the last half splice.
         h1, h2, h3 = h1[halfN:-halfN], h2[halfN:-halfN], h3[halfN:-halfN]
 
-        tarr = self.params['tstart'] + tbreak +  np.arange(0, self.params['dur'], 1.0/self.params['fs'])
+        tarr = self.params['tstart'] + tbreak +  xp.arange(0, self.params['dur'], 1.0/self.params['fs'])
 
         return h1, h2, h3, tarr
 
@@ -226,25 +276,25 @@ class LISAdata():
             h3 = sg.filtfilt(b, a, h3)
         '''
 
-        fftfreqs = np.fft.rfftfreq(Nperseg, 1.0/self.params['fs'])
+        fftfreqs = xp.fft.rfftfreq(Nperseg, 1.0/self.params['fs'])
 
 
         # Map of spectrum
-        r1 = np.zeros((fftfreqs.size, nsegs), dtype='complex')
-        r2 = np.zeros((fftfreqs.size, nsegs), dtype='complex')
-        r3 = np.zeros((fftfreqs.size, nsegs), dtype='complex')
+        r1 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
+        r2 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
+        r3 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
 
 
         # Hann Window
-        hwin = np.hanning(Nperseg)
-        win_fact = np.mean(hwin**2)
+        hwin = xp.hanning(Nperseg)
+        win_fact = xp.mean(hwin**2)
 
 
-        zpad = np.zeros(Nperseg)
+#        zpad = np.zeros(Nperseg)
 
         ## Initiate time segment arrays
-        tsegstart = np.zeros(nsegs)
-        tsegmid = np.zeros(nsegs)
+        tsegstart = xp.zeros(nsegs)
+        tsegmid = xp.zeros(nsegs)
 
         # We will use 50% overlapping segments
         for ii in range(0, nsegs):
@@ -254,18 +304,24 @@ class LISAdata():
             idxmid = idxmin + int(Nperseg/2)
             if hwin.size != h1[idxmin:idxmax].size:
                 import pdb; pdb.set_trace()
+            
+            if self.gpu:
+                r1 = r1.at[:, ii].set(xp.fft.rfft(hwin*h1[idxmin:idxmax], axis=0))
+                r2 = r2.at[:, ii].set(xp.fft.rfft(hwin*h2[idxmin:idxmax], axis=0))
+                r3 = r3.at[:, ii].set(xp.fft.rfft(hwin*h3[idxmin:idxmax], axis=0))
+                tsegstart = tsegstart.at[ii].set(timearray[idxmin])
+                tsegmid = tsegmid.at[ii].set(timearray[idxmid])
+            else:
+                r1[:, ii] =   xp.fft.rfft(hwin*h1[idxmin:idxmax], axis=0)
+                r2[:, ii] =   xp.fft.rfft(hwin*h2[idxmin:idxmax], axis=0)
+                r3[:, ii] =   xp.fft.rfft(hwin*h3[idxmin:idxmax], axis=0)
 
-            r1[:, ii] =   np.fft.rfft(hwin*h1[idxmin:idxmax], axis=0)
-            r2[:, ii] =   np.fft.rfft(hwin*h2[idxmin:idxmax], axis=0)
-            r3[:, ii] =   np.fft.rfft(hwin*h3[idxmin:idxmax], axis=0)
-
-
-            ## There's probably a more pythonic way of doing this, but it'll work for now.
-            tsegstart[ii] = timearray[idxmin]
-            tsegmid[ii] = timearray[idxmid]
+                ## There's probably a more pythonic way of doing this, but it'll work for now.
+                tsegstart[ii] = timearray[idxmin]
+                tsegmid[ii] = timearray[idxmid]
 
         # "Cut" to desired frequencies
-        idx = np.logical_and(fftfreqs >=  self.params['fmin'] , fftfreqs <=  self.params['fmax'])
+        idx = xp.logical_and(fftfreqs >=  self.params['fmin'] , fftfreqs <=  self.params['fmax'])
 
         # Output arrays
         fdata = fftfreqs[idx]
@@ -274,13 +330,13 @@ class LISAdata():
         # Get desired frequencies only
         # We want to normalize ffts so thier square give the psd
         # win_fact is to adjust for hann windowing, sqrt(2) for single sided
-        r1 = np.sqrt(2/win_fact)*r1[idx, :]/(self.params['fs']*np.sqrt(self.params['seglen']))
-        r2 = np.sqrt(2/win_fact)*r2[idx, :]/(self.params['fs']*np.sqrt(self.params['seglen']))
-        r3 = np.sqrt(2/win_fact)*r3[idx, :]/(self.params['fs']*np.sqrt(self.params['seglen']))
+        r1 = xp.sqrt(2/win_fact)*r1[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
+        r2 = xp.sqrt(2/win_fact)*r2[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
+        r3 = xp.sqrt(2/win_fact)*r3[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
 
 
         np.savez(self.params['out_dir'] + '/' +self.params['input_spectrum'], r1=r1, r2=r2, r3=r3, fdata=fdata)
 
-        return r1, r2, r3, fdata, tsegstart, tsegmid
+        return np.array(r1), np.array(r2), np.array(r3), np.array(fdata), np.array(tsegstart), np.array(tsegmid)
 
     

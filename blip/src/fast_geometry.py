@@ -1,13 +1,18 @@
 import numpy as np
 import numpy.linalg as LA
+import jax.numpy as jnp
+#import jax.numpy.linalg as JLA
+import jax
 #from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
-#from jax import config
-#config.update("jax_enable_x64", True)
+from jax import config
+config.update("jax_enable_x64", True)
 import healpy as hp
 from scipy.special import sph_harm
 from blip.src.sph_geometry import sph_geometry
 from tqdm import tqdm
+import os
+import time
 
 
 
@@ -35,7 +40,29 @@ class fast_geometry(sph_geometry):
         else:
             self.parallel = False
         self.armlength = 2.5e9
-
+        
+        ## numpy/jax.numpy switch
+        global xp
+        backend = jax.default_backend()
+        if backend == 'gpu':
+            print("GPU detected; performing response function calculations on GPU...")
+            self.gpu = True
+            xp = jnp
+        elif backend == 'cpu':
+            print("No GPU detected; performing response function calculations on CPU...")
+            self.gpu = False
+            xp = np
+        else:
+            print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
+            self.gpu = False
+            xp = np
+        
+        ## shared memory handling
+        if self.gpu and ('TF_FORCE_UNIFIED_MEMORY' in os.environ.keys()) and os.environ['TF_FORCE_UNIFIED_MEMORY']:
+            self.shared_memory = True
+            print("Using shared memory.")
+        else:
+            self.shared_memory = False
 
 
     def lisa_orbits(self, tsegmid):
@@ -95,9 +122,9 @@ class fast_geometry(sph_geometry):
 
 
         ## Construct position vectors r_n
-        rs1 = np.array([x_n[:, 0],y_n[:, 0],z_n[:, 0]])
-        rs2 = np.array([x_n[:, 1],y_n[:, 1],z_n[:, 1]])
-        rs3 = np.array([x_n[:, 2],y_n[:, 2],z_n[:, 2]])
+        rs1 = xp.array([x_n[:, 0],y_n[:, 0],z_n[:, 0]])
+        rs2 = xp.array([x_n[:, 1],y_n[:, 1],z_n[:, 1]])
+        rs3 = xp.array([x_n[:, 2],y_n[:, 2],z_n[:, 2]])
 
         return rs1, rs2, rs3
 
@@ -105,38 +132,38 @@ class fast_geometry(sph_geometry):
     ## Wrapper functions to return the corresponding response array from its entries ##
     ###################################################################################
     
-    def isgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii):
+    def isgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, ghost_arg=None):
         
         '''
         Wrapper function to take sky integral and return response array slice
         '''
         
-        R1_ii  = self.dOmega/(4*np.pi)*np.sum(F1_ii, axis=1 )
-        R2_ii  = self.dOmega/(4*np.pi)*np.sum(F2_ii, axis=1 ) 
-        R3_ii  = self.dOmega/(4*np.pi)*np.sum(F3_ii, axis=1 ) 
-        R12_ii = self.dOmega/(4*np.pi)*np.sum(F12_ii, axis=1) 
-        R13_ii = self.dOmega/(4*np.pi)*np.sum(F13_ii, axis=1) 
-        R23_ii = self.dOmega/(4*np.pi)*np.sum(F23_ii, axis=1) 
+        R1_ii  = self.dOmega/(4*xp.pi)*xp.sum(F1_ii, axis=1 )
+        R2_ii  = self.dOmega/(4*xp.pi)*xp.sum(F2_ii, axis=1 ) 
+        R3_ii  = self.dOmega/(4*xp.pi)*xp.sum(F3_ii, axis=1 ) 
+        R12_ii = self.dOmega/(4*xp.pi)*xp.sum(F12_ii, axis=1) 
+        R13_ii = self.dOmega/(4*xp.pi)*xp.sum(F13_ii, axis=1) 
+        R23_ii = self.dOmega/(4*xp.pi)*xp.sum(F23_ii, axis=1) 
         
-        return np.array([ [R1_ii, R12_ii, R13_ii] , [np.conj(R12_ii), R2_ii, R23_ii], [np.conj(R13_ii), np.conj(R23_ii), R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [xp.conj(R12_ii), R2_ii, R23_ii], [xp.conj(R13_ii), xp.conj(R23_ii), R3_ii] ])
     
-    def sph_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii):
+    def sph_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, ghost_arg=None):
         
         '''
         Wrapper function to convolve with Ylms and return response array slice
         '''
         
-        R1_ii  = self.dOmega*np.einsum('ij, jk', F1_ii, self.Ylms)
-        R2_ii  = self.dOmega*np.einsum('ij, jk', F2_ii, self.Ylms)
-        R3_ii = self.dOmega*np.einsum('ij, jk', F3_ii, self.Ylms)
-        R12_ii = self.dOmega*np.einsum('ij, jk', F12_ii, self.Ylms)
-        R13_ii = self.dOmega*np.einsum('ij, jk', F13_ii, self.Ylms)
-        R23_ii = self.dOmega*np.einsum('ij, jk', F23_ii, self.Ylms)
-        R21_ii = self.dOmega*np.einsum('ij, jk', np.conj(F12_ii), self.Ylms)
-        R31_ii = self.dOmega*np.einsum('ij, jk', np.conj(F13_ii), self.Ylms)
-        R32_ii = self.dOmega*np.einsum('ij, jk', np.conj(F23_ii), self.Ylms)
+        R1_ii  = self.dOmega*xp.einsum('ij, jk', F1_ii, self.Ylms)
+        R2_ii  = self.dOmega*xp.einsum('ij, jk', F2_ii, self.Ylms)
+        R3_ii = self.dOmega*xp.einsum('ij, jk', F3_ii, self.Ylms)
+        R12_ii = self.dOmega*xp.einsum('ij, jk', F12_ii, self.Ylms)
+        R13_ii = self.dOmega*xp.einsum('ij, jk', F13_ii, self.Ylms)
+        R23_ii = self.dOmega*xp.einsum('ij, jk', F23_ii, self.Ylms)
+        R21_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F12_ii), self.Ylms)
+        R31_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F13_ii), self.Ylms)
+        R32_ii = self.dOmega*xp.einsum('ij, jk', xp.conj(F23_ii), self.Ylms)
     
-        return np.array([ [R1_ii, R12_ii, R13_ii] , [R21_ii, R2_ii, R23_ii], [R31_ii, R32_ii, R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [R21_ii, R2_ii, R23_ii], [R31_ii, R32_ii, R3_ii] ])
 
     
     def pix_convolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii,skymap):
@@ -149,22 +176,28 @@ class fast_geometry(sph_geometry):
         ## Detector response summed over polarization and integrated over sky direction
         ## The travel time phases for the which are relevent for the cross-channel are
         ## accounted for in the Fplus and Fcross expressions above.
-        R1_ii  = self.dOmega*np.sum( F1_ii * skymap[None, :], axis=1 )
-        R2_ii  = self.dOmega*np.sum( F2_ii * skymap[None, :], axis=1 ) 
-        R3_ii  = self.dOmega*np.sum( F3_ii * skymap[None, :], axis=1 ) 
-        R12_ii = self.dOmega*np.sum( F12_ii * skymap[None, :], axis=1) 
-        R13_ii = self.dOmega*np.sum( F13_ii * skymap[None, :], axis=1) 
-        R23_ii = self.dOmega*np.sum( F23_ii * skymap[None, :], axis=1) 
+#        R1_ii  = self.dOmega*xp.sum( F1_ii * skymap[None, :], axis=1 )
+#        R2_ii  = self.dOmega*xp.sum( F2_ii * skymap[None, :], axis=1 ) 
+#        R3_ii  = self.dOmega*xp.sum( F3_ii * skymap[None, :], axis=1 ) 
+#        R12_ii = self.dOmega*xp.sum( F12_ii * skymap[None, :], axis=1) 
+#        R13_ii = self.dOmega*xp.sum( F13_ii * skymap[None, :], axis=1) 
+#        R23_ii = self.dOmega*xp.sum( F23_ii * skymap[None, :], axis=1) 
+        R1_ii  = self.dOmega*xp.einsum('ij, j', F1_ii, skymap)
+        R2_ii  = self.dOmega*xp.einsum('ij, j', F2_ii, skymap)
+        R3_ii  = self.dOmega*xp.einsum('ij, j', F3_ii, skymap)
+        R12_ii = self.dOmega*xp.einsum('ij, j', F12_ii, skymap)
+        R13_ii = self.dOmega*xp.einsum('ij, j', F13_ii, skymap)
+        R23_ii = self.dOmega*xp.einsum('ij, j', F23_ii, skymap)
         
-        return np.array([ [R1_ii, R12_ii, R13_ii] , [np.conj(R12_ii), R2_ii, R23_ii], [np.conj(R13_ii), np.conj(R23_ii), R3_ii] ])
+        return xp.array([ [R1_ii, R12_ii, R13_ii] , [xp.conj(R12_ii), R2_ii, R23_ii], [xp.conj(R13_ii), xp.conj(R23_ii), R3_ii] ])
     
-    def pix_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii):
+    def pix_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, ghost_arg=None):
         '''
         Wrapper function which just returns its inputs, as the unconvolved case doesn't integrate over the sky
         
         '''
         
-        return np.array([ [F1_ii, F12_ii, F13_ii] , [np.conj(F12_ii), F2_ii, F23_ii], [np.conj(F13_ii), np.conj(F23_ii), F3_ii] ])
+        return xp.array([ [F1_ii, F12_ii, F13_ii] , [xp.conj(F12_ii), F2_ii, F23_ii], [xp.conj(F13_ii), xp.conj(F23_ii), F3_ii] ])
     
     def pix_masked_unconvolved_asgwb_wrapper(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii,mask):
         '''
@@ -172,7 +205,9 @@ class fast_geometry(sph_geometry):
         
         '''
 
-        return np.array([ [F1_ii[:,mask], F12_ii[:,mask], F13_ii[:,mask]] , [np.conj(F12_ii[:,mask]), F2_ii[:,mask], F23_ii[:,mask]], [np.conj(F13_ii[:,mask]), np.conj(F23_ii[:,mask]), F3_ii[:,mask]] ])
+        return xp.array([ [F1_ii[:,mask], F12_ii[:,mask], F13_ii[:,mask]] , 
+                          [xp.conj(F12_ii[:,mask]), F2_ii[:,mask], F23_ii[:,mask]], 
+                          [xp.conj(F13_ii[:,mask]), xp.conj(F23_ii[:,mask]), F3_ii[:,mask]] ])
     
     
     ########################################################################
@@ -193,8 +228,15 @@ class fast_geometry(sph_geometry):
         
         ## generically assign the frequency slice to each unique response
         ## the '...' indexing allows this to handle both 3 x 3 x f x t and 3 x 3 x f x t x n response shapes
-        for jj in range(len(self.unique_responses)):
-            self.unique_responses[jj][:,:,ii,...] = Rf[jj]
+        if self.shared_memory:
+            for jj in range(len(self.unique_responses)):
+                self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+        elif self.gpu:
+            for jj in range(len(self.unique_responses)):
+                self.unique_responses[jj][:,:,ii,...] = np.array(Rf[jj])
+        else:
+            for jj in range(len(self.unique_responses)):
+                self.unique_responses[jj][:,:,ii,...] = Rf[jj]
         
         return
     
@@ -253,54 +295,73 @@ class fast_geometry(sph_geometry):
         
         '''
         
+        f0_ii = self.f0_jax[ii]
+        
         # Calculate GW transfer function for the michelson channels
-        gammaU_plus    =    1/2 * (np.sinc((self.f0[ii])*(1 - self.udir)/np.pi)*np.exp(-1j*self.f0[ii]*(3+self.udir)) + \
-                         np.sinc((self.f0[ii])*(1 + self.udir)/np.pi)*np.exp(-1j*self.f0[ii]*(1+self.udir)))
+        gammaU_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.udir)) + \
+                         xp.sinc((f0_ii)*(1 + self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.udir)))
 
-        gammaV_plus    =    1/2 * (np.sinc((self.f0[ii])*(1 - self.vdir)/np.pi)*np.exp(-1j*self.f0[ii]*(3+self.vdir)) + \
-                         np.sinc((self.f0[ii])*(1 + self.vdir)/np.pi)*np.exp(-1j*self.f0[ii]*(1+self.vdir)))
+        gammaV_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.vdir)) + \
+                         xp.sinc((f0_ii)*(1 + self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.vdir)))
 
-        gammaW_plus    =    1/2 * (np.sinc((self.f0[ii])*(1 - self.wdir)/np.pi)*np.exp(-1j*self.f0[ii]*(3+self.wdir)) + \
-                         np.sinc((self.f0[ii])*(1 + self.wdir)/np.pi)*np.exp(-1j*self.f0[ii]*(1+self.wdir)))
+        gammaW_plus    =    1/2 * (xp.sinc((f0_ii)*(1 - self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(3+self.wdir)) + \
+                         xp.sinc((f0_ii)*(1 + self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(1+self.wdir)))
 
 
         # Calculate GW transfer function for the michelson channels
-        gammaU_minus    =    1/2 * (np.sinc((self.f0[ii])*(1 + self.udir)/np.pi)*np.exp(-1j*self.f0[ii]*(3 - self.udir)) + \
-                         np.sinc((self.f0[ii])*(1 - self.udir)/np.pi)*np.exp(-1j*self.f0[ii]*(1 - self.udir)))
+        gammaU_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.udir)) + \
+                         xp.sinc((f0_ii)*(1 - self.udir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.udir)))
 
-        gammaV_minus    =    1/2 * (np.sinc((self.f0[ii])*(1 + self.vdir)/np.pi)*np.exp(-1j*self.f0[ii]*(3 - self.vdir)) + \
-                         np.sinc((self.f0[ii])*(1 - self.vdir)/np.pi)*np.exp(-1j*self.f0[ii]*(1 - self.vdir)))
+        gammaV_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.vdir)) + \
+                         xp.sinc((f0_ii)*(1 - self.vdir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.vdir)))
 
-        gammaW_minus    =    1/2 * (np.sinc((self.f0[ii])*(1 + self.wdir)/np.pi)*np.exp(-1j*self.f0[ii]*(3 - self.wdir)) + \
-                         np.sinc((self.f0[ii])*(1 - self.wdir)/np.pi)*np.exp(-1j*self.f0[ii]*(1 - self.wdir)))
+        gammaW_minus    =    1/2 * (xp.sinc((f0_ii)*(1 + self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(3 - self.wdir)) + \
+                         xp.sinc((f0_ii)*(1 - self.wdir)/xp.pi)*xp.exp(-1j*f0_ii*(1 - self.wdir)))
 
 
         ## Michelson antenna patterns
         ## Calculate Fplus
-        Fplus1 = 0.5*(self.Fplus_u*gammaU_plus - self.Fplus_v*gammaV_plus)*np.exp(-1j*self.f0[ii]*(self.udir + self.vdir)/np.sqrt(3))
-        Fplus2 = 0.5*(self.Fplus_w*gammaW_plus - self.Fplus_u*gammaU_minus)*np.exp(-1j*self.f0[ii]*(-self.udir + self.vdir)/np.sqrt(3))
-        Fplus3 = 0.5*(self.Fplus_v*gammaV_minus - self.Fplus_w*gammaW_minus)*np.exp(1j*self.f0[ii]*(self.vdir + self.wdir)/np.sqrt(3))
+        Fplus1 = 0.5*(self.Fplus_u*gammaU_plus - self.Fplus_v*gammaV_plus)*xp.exp(-1j*f0_ii*(self.udir + self.vdir)/xp.sqrt(3))
+        Fplus2 = 0.5*(self.Fplus_w*gammaW_plus - self.Fplus_u*gammaU_minus)*xp.exp(-1j*f0_ii*(-self.udir + self.vdir)/xp.sqrt(3))
+        Fplus3 = 0.5*(self.Fplus_v*gammaV_minus - self.Fplus_w*gammaW_minus)*xp.exp(1j*f0_ii*(self.vdir + self.wdir)/xp.sqrt(3))
 
         ## Calculate Fcross
-        Fcross1 = 0.5*(self.Fcross_u*gammaU_plus  - self.Fcross_v*gammaV_plus)*np.exp(-1j*self.f0[ii]*(self.udir + self.vdir)/np.sqrt(3))
-        Fcross2 = 0.5*(self.Fcross_w*gammaW_plus  - self.Fcross_u*gammaU_minus)*np.exp(-1j*self.f0[ii]*(-self.udir + self.vdir)/np.sqrt(3))
-        Fcross3 = 0.5*(self.Fcross_v*gammaV_minus - self.Fcross_w*gammaW_minus)*np.exp(1j*self.f0[ii]*(self.vdir + self.wdir)/np.sqrt(3))
+        Fcross1 = 0.5*(self.Fcross_u*gammaU_plus  - self.Fcross_v*gammaV_plus)*xp.exp(-1j*f0_ii*(self.udir + self.vdir)/xp.sqrt(3))
+        Fcross2 = 0.5*(self.Fcross_w*gammaW_plus  - self.Fcross_u*gammaU_minus)*xp.exp(-1j*f0_ii*(-self.udir + self.vdir)/xp.sqrt(3))
+        Fcross3 = 0.5*(self.Fcross_v*gammaV_minus - self.Fcross_w*gammaW_minus)*xp.exp(1j*f0_ii*(self.vdir + self.wdir)/xp.sqrt(3))
 
         ## Detector response averaged over polarization
         ## The travel time phases for the which are relevent for the cross-channel are
         ## accounted for in the Fplus and Fcross expressions above.
-        F1_ii  = (1/2)*((np.absolute(Fplus1))**2 + (np.absolute(Fcross1))**2)
-        F2_ii  = (1/2)*((np.absolute(Fplus2))**2 + (np.absolute(Fcross2))**2) 
-        F3_ii  = (1/2)*((np.absolute(Fplus3))**2 + (np.absolute(Fcross3))**2) 
-        F12_ii = (1/2)*(np.conj(Fplus1)*Fplus2 + np.conj(Fcross1)*Fcross2)
-        F13_ii = (1/2)*(np.conj(Fplus1)*Fplus3 + np.conj(Fcross1)*Fcross3)
-        F23_ii = (1/2)*(np.conj(Fplus2)*Fplus3 + np.conj(Fcross2)*Fcross3)
+        F1_ii  = (1/2)*((xp.absolute(Fplus1))**2 + (xp.absolute(Fcross1))**2)
+        F2_ii  = (1/2)*((xp.absolute(Fplus2))**2 + (xp.absolute(Fcross2))**2) 
+        F3_ii  = (1/2)*((xp.absolute(Fplus3))**2 + (xp.absolute(Fcross3))**2) 
+        F12_ii = (1/2)*(xp.conj(Fplus1)*Fplus2 + xp.conj(Fcross1)*Fcross2)
+        F13_ii = (1/2)*(xp.conj(Fplus1)*Fplus3 + xp.conj(Fcross1)*Fcross3)
+        F23_ii = (1/2)*(xp.conj(Fplus2)*Fplus3 + xp.conj(Fcross2)*Fcross3)
 
-        response_slices = [wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii) if arg is None else wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg) for wrapper, arg in self.wrappers]
+#        response_slices = [wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii) if arg is None else wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg) for wrapper, arg in self.wrappers]
+        
+        response_slices = self.apply_response_slice_convolutions(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii)
+
+        return response_slices
+    
+    def apply_response_slice_convolutions(self,F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii):
+        '''
+        Helper function to perform the sky integrals/masking as needed.
+        '''
+        
+        response_slices = []
+#        for wrapper, arg in self.wrappers: ## rewrite this to iterate over strings + getattr to avoid pickling functions
+#            response_slices.append(wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg))
+#        response_slices = [wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii) if arg is None else wrapper(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg) for wrapper, arg in self.wrappers]
+            
+        
+        for wrapper_name, arg in self.wrappers:
+            response_slices.append(getattr(self,wrapper_name)(F1_ii, F2_ii, F3_ii, F12_ii, F13_ii, F23_ii, arg))
         
         return response_slices
-
-
+        
     def get_geometric_Fplus_Fcross(self,arm_hat_ij,mhat_prod,nhat_prod):
         
         '''
@@ -317,9 +378,9 @@ class fast_geometry(sph_geometry):
         
         '''
         
-        interior_prod = np.einsum("ik,jk -> ijk",arm_hat_ij, arm_hat_ij)
+        interior_prod = xp.einsum("ik,jk -> ijk",arm_hat_ij, arm_hat_ij)
         
-        return 0.5*np.einsum("ijk,ijl", interior_prod, mhat_prod - nhat_prod), 0.5*np.einsum("ijk,ijl", interior_prod, mhat_prod + nhat_prod)
+        return 0.5*xp.einsum("ijk,ijl", interior_prod, mhat_prod - nhat_prod), 0.5*xp.einsum("ijk,ijl", interior_prod, mhat_prod + nhat_prod)
     
     
     def get_xyz_from_michelson(self):
@@ -328,15 +389,28 @@ class fast_geometry(sph_geometry):
         Compute the LISA response functions for the XYZ Time-Delay Interferometry channels from the Michelson channels.
         
         '''
+        if self.shared_memory:
+            for i in range(len(self.unique_responses)):
+                if self.unique_responses[i].ndim == 4:
+                    self.unique_responses[i] = 4 * self.unique_responses[i] * (xp.sin(2*self.f0[None, None, :, None]))**2
+                elif self.unique_responses[i].ndim == 5:
+                    for jj in range(self.f0.size):
+                        self.unique_responses[i] = self.unique_responses[i].at[:,:,jj,:,:].set(4 * self.unique_responses[i][:,:,jj,:,:] * (xp.sin(2*self.f0[jj]))**2)
+    #                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
+                else:
+                    raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
         
-        for i, R_mich in enumerate(self.unique_responses):
-            if R_mich.ndim == 4:
-                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None]))**2
-            elif R_mich.ndim == 5:
-                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
-            else:
-                raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(R_mich.ndim))
-        
+        else:
+            for i in range(len(self.unique_responses)):
+                if self.unique_responses[i].ndim == 4:
+                    self.unique_responses[i] = 4 * self.unique_responses[i] * (np.sin(2*self.f0[None, None, :, None]))**2
+                elif self.unique_responses[i].ndim == 5:
+                    for jj in range(self.f0.size):
+                        self.unique_responses[i][:,:,jj,:,:] = 4 * self.unique_responses[i][:,:,jj,:,:] * (np.sin(2*self.f0[jj]))**2
+    #                self.unique_responses[i] = 4 * R_mich * (np.sin(2*self.f0[None, None, :, None, None]))**2
+                else:
+                    raise ValueError("Michelson response has an unsupported number of dimensions ({}). Something has gone wrong...".format(self.unique_responses[i].ndim))
+            
         return
     
     
@@ -372,10 +446,15 @@ class fast_geometry(sph_geometry):
         RAT = (1/9) * (2*RXX - RYY - RZZ + 2*RXY - np.conj(RXY) + 2*RXZ - np.conj(RXZ) - RYZ - np.conj(RYZ))
 
         RET = (1/(3*np.sqrt(3))) * (RZZ - RYY - RYZ + np.conj(RYZ) + np.conj(RXZ) - np.conj(RXY))
-
-        aet_response_mat = np.array([ [RAA, RAE, RAT] , \
-                                    [np.conj(RAE), REE, RET], \
-                                    [np.conj(RAT), np.conj(RET), RTT] ])
+        
+        if self.shared_memory:
+            aet_response_mat = xp.array([ [RAA, RAE, RAT] , \
+                                        [xp.conj(RAE), REE, RET], \
+                                        [xp.conj(RAT), xp.conj(RET), RTT] ])
+        else:
+            aet_response_mat = np.array([ [RAA, RAE, RAT] , \
+                                        [np.conj(RAE), REE, RET], \
+                                        [np.conj(RAT), np.conj(RET), RTT] ])
 
         return aet_response_mat
     
@@ -422,6 +501,7 @@ class fast_geometry(sph_geometry):
         self.plot_flag = plot_flag
         ## basic preliminaries
         self.f0 = f0
+        self.f0_jax = xp.array(f0)
         
         # Area of each pixel in sq.radians
         self.dOmega = hp.pixelfunc.nside2pixarea(self.params['nside'])
@@ -460,9 +540,9 @@ class fast_geometry(sph_geometry):
         
         ## Calculate directional unit vector dot products
         ## Dimensions of udir is time-segs x sky-pixels
-        self.udir = np.einsum('ij,ik',uhat_21,omegahat)
-        self.vdir = np.einsum('ij,ik',vhat_31,omegahat)
-        self.wdir = np.einsum('ij,ik',what_32,omegahat)
+        self.udir = xp.array(np.einsum('ij,ik',uhat_21,omegahat))
+        self.vdir = xp.array(np.einsum('ij,ik',vhat_31,omegahat))
+        self.wdir = xp.array(np.einsum('ij,ik',what_32,omegahat))
 
 
         ## NB --    An attempt to directly adapt e.g. (u o u):e+ as implicit tensor calculations
@@ -502,8 +582,8 @@ class fast_geometry(sph_geometry):
             ## this is mapped to the response_wrapper_func attached to the submodel
             if sm.spatial_model_name == 'isgwb':
                 sm.response_shape = (3,3,f0.size,tsegmid.size)
-                sm.response_wrapper_func = self.isgwb_wrapper
-                wrappers.append(self.isgwb_wrapper)
+                sm.response_wrapper_func = "isgwb_wrapper"
+                wrappers.append("isgwb_wrapper")
                 wrapper_args.append(None)
             elif sm.basis == 'sph':
                 ## array size of almax
@@ -515,15 +595,15 @@ class fast_geometry(sph_geometry):
                     lval, mval = self.idxtoalm(sm.almax, ii)
                     self.Ylms[:, ii] = sph_harm(mval, lval, phi, theta)
                 sm.response_shape = (3,3,f0.size, tsegmid.size,alm_size)
-                sm.response_wrapper_func = self.sph_asgwb_wrapper
-                wrappers.append(self.sph_asgwb_wrapper)
+                sm.response_wrapper_func = "sph_asgwb_wrapper"
+                wrappers.append("sph_asgwb_wrapper")
                 wrapper_args.append(None)
             elif sm.basis == 'pixel':
                 if sm.injection or hasattr(sm,"fixed_map") and sm.fixed_map:
                     ## templated anisotropic searches with pre-convolved maps
                     sm.response_shape = (3,3,f0.size, tsegmid.size)
-                    sm.response_wrapper_func = self.pix_convolved_asgwb_wrapper
-                    wrappers.append(self.pix_convolved_asgwb_wrapper)
+                    sm.response_wrapper_func = "pix_convolved_asgwb_wrapper"
+                    wrappers.append("pix_convolved_asgwb_wrapper")
                     if fullsky:
                         sm_map = sm.skymap
                     else:
@@ -539,14 +619,14 @@ class fast_geometry(sph_geometry):
                     ## if the response is computed over the full sky, this will just be the submodel mask as a boolean array
                     bool_mask = np.array([True if p_idx in sm.mask_idx else False for p_idx in pix_idx])
                     sm.response_args = bool_mask
-                    sm.response_wrapper_func = self.pix_masked_unconvolved_asgwb_wrapper
-                    wrappers.append(self.pix_masked_unconvolved_asgwb_wrapper)
+                    sm.response_wrapper_func = "pix_masked_unconvolved_asgwb_wrapper"
+                    wrappers.append("pix_masked_unconvolved_asgwb_wrapper")
                     wrapper_args.append(bool_mask)
                 else:
                     ## unconvolved full-sky pixel response
                     sm.response_shape = (3,3,f0.size,tsegmid.size,pix_idx.size)
-                    sm.response_wrapper_func = self.pix_unconvolved_asgwb_wrapper
-                    wrappers.append(self.pix_unconvolved_asgwb_wrapper)
+                    sm.response_wrapper_func = "pix_unconvolved_asgwb_wrapper"
+                    wrappers.append("pix_unconvolved_asgwb_wrapper")
                     wrapper_args.append(None)
                     
             else:
@@ -575,7 +655,16 @@ class fast_geometry(sph_geometry):
                         
                         
         self.wrappers = unique_wrappers
-        self.unique_responses = [np.zeros(shape,dtype='complex') for shape in unique_shapes]
+        
+        ## if we are using a device with shared RAM (CPU+GPU), we can allow the response arrays to be jax.numpy arrays
+        ## otherwise we want to keep the full array on CPU, so use numpy
+        if self.shared_memory:
+            self.unique_responses = [xp.zeros(shape,dtype='complex128') for shape in unique_shapes]
+            for urx in self.unique_responses:
+                print(urx.shape)
+                print("Approx memory usage: {} GB".format(np.prod(urx.shape)*16 / 10**9))
+        else:
+            self.unique_responses = [np.zeros(shape,dtype='complex128') for shape in unique_shapes]
         
         
         
@@ -585,7 +674,7 @@ class fast_geometry(sph_geometry):
         
         ## the parallel implementation still has a lot of overhead due to needing to pickle functions and passing them to the threads
         ## unclear if the effects of this will be noticible at scale
-        print("Computing LISA response functionss...")
+        print("Computing LISA response functions...")
         if self.parallel:
             with Pool(self.nthreads) as pool:
                 result = pool.map(self.frequency_response_wrapper,idx)
@@ -616,16 +705,42 @@ class fast_geometry(sph_geometry):
                 
         return
 
+#    def scan_func(self,ii,unique_responses):
+#        for jj in range(len(self.unique_responses)):
+#            self.unique_responses[jj] = self.unique_responses[jj].at[:,:,ii,...].set(Rf[jj])
+#        return self.unpack_wrapper(ii,self.frequency_response_wrapper(ii))
+#
+#    def scan_func(self,ii): ## list of length number of responses, each ofh which has a frequency axis, but are not necessarily the same shape
+#        
+#        self.unique_responses, _ = lax.scan(subscan_func,)
+#        unique_responses = subscan_func(jj)
+#        
+#        return 
+#    
+#    def subscan_func(unique_responses,jj):
+#        
 
 
 
 
 
 
-
-
-
-
+def get_model_responses(Model_obj):
+    '''
+    Wrapper function to call methods for computing the response function.
+    
+    This exists so that the methods in question can be easily jettisoned when the Model object in JAX JIT compilation.
+    
+    '''
+    ## Having initialized all the components, now compute the LISA response functions
+    t1 = time.time()
+    fast_rx = fast_geometry(Model_obj.params)
+    fast_rx.calculate_response_functions(Model_obj.f0,Model_obj.tsegmid,[Model_obj.submodels[smn] for smn in Model_obj.submodel_names if smn !='noise'],Model_obj.params['tdi_lev'])
+    t2 = time.time()
+    print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))
+    ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+    del fast_rx
+    return
 
 
 

@@ -12,7 +12,7 @@ setup(
     url="https://github.com/sharanbngr/blip",
     author="Sharan Banagiri, Alexander Criswell, and others",
     author_email="sharan.banagiri@gmail.com",
-    version="2.0.2",
+    version="2.0.3",
     license="MIT",
     packages=["blip",
         "blip.src",

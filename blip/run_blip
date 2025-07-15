@@ -6,7 +6,7 @@ import sys, os, shutil, configparser, subprocess
 sys.path.append(os.getcwd()) ## this lets python find src
 from blip.src.makeLISAdata import LISAdata
 from blip.src.models import Model, Injection
-from blip.src.fast_geometry import fast_geometry
+from blip.src.fast_geometry import fast_geometry, get_model_responses
 from blip.src.utils import ensure_color_matching
 from blip.tools.plotmaker import cornermaker
 from blip.tools.plotmaker import mapmaker
@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 from multiprocessing import Pool
 import time
+#import jax
+from jax import config
+config.update("jax_enable_x64", True)
 
 ## set default fonts
 plot_params = {'font.family':'STIXGeneral',
@@ -25,9 +28,9 @@ matplotlib.rcParams.update(plot_params)
 class LISA(LISAdata, Model):
 
     '''
-    Generic class for getting data and setting up the prior space
-    and likelihood. This is tuned for ISGWB analysis at the moment
-    but it should not be difficult to modify for other use cases.
+    
+    Generic class for getting data and setting up the prior space and likelihood. 
+    
     '''
 
     def __init__(self,  params, inj):
@@ -50,6 +53,9 @@ class LISA(LISAdata, Model):
             # Set up the Bayes class
             print("Building Bayesian model...")
             self.Model = Model(params,inj,self.fdata,self.f0,self.tsegmid,self.rmat)
+            
+            ## compute response functions
+            get_model_responses(self.Model)
             
             # make sure matching injections/models have matching colors
             if not self.params['load_data']:
@@ -128,8 +134,18 @@ class LISA(LISAdata, Model):
         self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
 
         ## create time-domain contribution from each injection component that isn't noise
-        for component in self.Injection.sgwb_component_names:
-            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component])
+        print("Simulating SGWB contributions...")
+        
+        ## set branching keys to ensure multi-sgwb independence
+        if 'seed' in self.params.keys():
+            rng_seed = np.int32(self.params['seed'])
+        else:
+            rng_seed = np.random.randint(int(1e9),dtype='int32')
+        rng = np.random.default_rng(rng_seed)
+        keys = rng.integers(int(1e9),size=len(self.Injection.sgwb_component_names),dtype='int32')
+        
+        for component, key in zip(self.Injection.sgwb_component_names,keys):
+            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key)
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
 
             # Add gravitational-wave time series to noise time-series
@@ -188,7 +204,8 @@ class LISA(LISAdata, Model):
         f0_data = self.fdata/(2*fstar)
         fast_rx = fast_geometry(self.params)
         fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.Injection.components[cmn] for cmn in self.Injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
-        
+        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+        del fast_rx
         return
     
     def compute_inj_fdata_spectra(self):
@@ -561,7 +578,6 @@ def blip(paramsfile='params.ini',resume=False):
     params['tdi_lev'] = str(config.get("params", "tdi_lev", fallback='xyz'))
     params['lisa_config'] = str(config.get("params", "lisa_config", fallback='orbiting'))
     params['nside'] = int(config.get("params", "nside"))
-    params['lmax'] = int(config.get("params", "lmax"))
     params['model_basis'] = str(config.get("params", "model_basis", fallback='pixel'))
     params['tstart'] = float(config.get("params", "tstart", fallback=0))
 
@@ -657,6 +673,7 @@ def blip(paramsfile='params.ini',resume=False):
     ## set sph flag to false if both inj and model basis are pixel
     if params['model_basis']=='sph' or inj['inj_basis']=='sph':
         params['sph_flag'] = True
+        params['lmax'] = int(config.get("params", "lmax"))
     
     ## some final flag, injection parameter setting if we aren't loading the Injection directly
     if inj['doInj'] and not inj['loadInj']:
@@ -741,7 +758,7 @@ def blip(paramsfile='params.ini',resume=False):
     params['sampler'] = str(config.get("run_params", "sampler"))
     
     ## only numpyro has GPU support
-    if N_GPU > 0 and params['sampler']!='numpyro':
+    if N_GPU > 0 and params['sampler'] not in ['numpyro','numpyro_nested']:
         raise ValueError("Only numpyro supports GPU acceleration but N_GPU ({}) > 0 and sampler is {}.".format(N_GPU,params['sampler']))
     
     ## sampler setup and late-time imports to reduce dependencies
@@ -762,6 +779,14 @@ def blip(paramsfile='params.ini',resume=False):
         from blip.src.numpyro_engine import numpyro_engine
         params['show_progress'] = int(config.get("run_params", "show_progress", fallback=1))
         params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
+        params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
+    ## numpyro nested sampling
+    elif params['sampler'] == 'numpyro_nested':
+        if nthread > 1:
+            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
+        from blip.src.numpyro_engine import numpyro_nested_engine
+#        params['show_progress'] = int(config.get("run_params", "show_progress", fallback=1))
+#        params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
         params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
         
     else:
@@ -821,7 +846,7 @@ def blip(paramsfile='params.ini',resume=False):
             print("Saved Injection to "+params['out_dir']+"/injection.pickle")
             
             ## also save the injected skymaps for later use
-            lisa.Injection.extract_and_save_skymap_data()
+            lisa.Injection.extract_and_save_skymap_data(map_data_path=params['out_dir']+"/plot_data.pickle")
             
             ## save generated data
             np.savez_compressed(params['out_dir']+'/simulated_data.npz',timearray=lisa.timearray,h1=lisa.h1,h2=lisa.h2,h3=lisa.h3)
@@ -931,6 +956,9 @@ def blip(paramsfile='params.ini',resume=False):
                 use_gpu = False
             engine, parameters, rng_key = numpyro_engine.define_engine(lisa, params['Nburn'], Nrun, nthread, params['show_progress'], params['seed'], gpu=use_gpu)
             lisaModel = lisa.Model
+            ## remove the functions which calculate responses so these aren't traced by JAX
+            if hasattr(lisaModel,"calculate_response_functions"):
+                delattr(lisaModel,"calculate_response_functions")
             
         else:
             resume_file = params['out_dir']+'/checkpoint.pickle'
@@ -938,6 +966,10 @@ def blip(paramsfile='params.ini',resume=False):
             with open(params['out_dir'] + '/model.pickle', 'rb') as modfile:
                 lisaModel = pickle.load(modfile)
             parameters = lisaModel.parameters
+            ## remove the functions which calculate responses so these aren't traced by JAX
+            if hasattr(lisaModel,"calculate_response_functions"):
+                print("got here")
+                delattr(lisaModel,"calculate_response_functions")
             
             ## check to see whether the run has already finished
             if chain is None:
@@ -975,6 +1007,56 @@ def blip(paramsfile='params.ini',resume=False):
             print("Elapsed time to converge: {} s".format(t2-t1))
         ## save chain
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
+    
+#    elif params['sampler'] == 'numpyro_nested':
+#        ## create engine
+#        Ntotal = params['Nsamples']
+#        if not resume:
+#            
+#            ## set initial chain to None
+#            chain = None
+#            
+#            if N_GPU > 0:
+#                use_gpu = True
+#            else:
+#                use_gpu = False
+#            engine, parameters, rng_key = numpyro_nested_engine.define_engine(lisa, Ntotal, params['seed'], gpu=use_gpu)
+#            lisaModel = lisa.Model
+#            ## remove the functions which calculate responses so these aren't traced by JAX
+#            if hasattr(lisaModel,"calculate_response_functions"):
+#                delattr(lisaModel,"calculate_response_functions")
+            
+#        else:
+#            resume_file = params['out_dir']+'/checkpoint.pickle'
+#            engine = numpyro_nested_engine.load_engine(resume_file)
+#            with open(params['out_dir'] + '/model.pickle', 'rb') as modfile:
+#                lisaModel = pickle.load(modfile)
+#            parameters = lisaModel.parameters
+#            
+#            ## additional samples
+#            if params['additional_samples'] is not None:
+#                ## new total = old total + additional
+#                try:
+#                    old_chain = np.loadtxt(params['out_dir'] + "/post_samples.txt")
+#                except:
+#                    raise ValueError("There is no posterior samples file (post_samples.txt) in the output directory. Did you complete the original run?")
+#                
+#                print("Run was previously completed and {} additional samples have been requested. Resampling weighted sample chain...".format(params['additional_samples']))
+#                Ntotal = N_current + params['additional_samples']
+#                engine.num_samples = params['additional_samples']
+#                _, _, new_key = jax.random.PRNGKey(seed).split(3)
+#                additional_post_samples = np.array(engine.get_samples(new_key,num_samples=params['additional_samples'])['theta_transformed']).T
+#                post_samples = np.concatenate((old_chain,additional_post_samples))
+#
+#        ## run sampler
+#        checkpoint_file = params['out_dir']+'/checkpoint.pickle'
+#        t1 = time.time()
+#        post_samples = numpyro_nested_engine.run_engine(engine,lisaModel,rng_key,checkpoint_file)
+#        t2= time.time()
+#        print("Elapsed time to converge: {} s".format(t2-t1))
+#
+#        ## save chain
+#        np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
     
     else:
         raise TypeError('Unknown sampler model chosen. Only dynesty, numpyro, & emcee are supported')

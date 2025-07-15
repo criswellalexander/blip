@@ -426,11 +426,17 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             ## this is the power law model with a constrained upper bound on its amplitude prior
             ## useful when performing spectral separation of an e.g., cosmological background
             ## from the higher-amplitude SOBBH background
-            self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
-            self.omegaf = self.powerlaw_spectrum
-            self.fancyname = "Power Law"+submodel_count
             if not injection:
-                self.spectral_prior = self.lowpowerlaw_prior
+                if hasattr(self,"fixedvals") and 'alpha' in self.fixedvals:
+                    self.fancyname = r'$\alpha='+'{}$'.format(self.fixedvals['alpha'])+" Low-Amplitude Power Law"+submodel_count
+                    self.omegaf = self.fixedpowerlaw_spectrum
+                    self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$']
+                    self.spectral_prior = self.flatlowpowerlaw_prior
+                else:
+                    self.fancyname = "Low-Amplitude Power Law"+submodel_count
+                    self.omegaf = self.powerlaw_spectrum
+                    self.spectral_parameters = self.spectral_parameters + [r'$\alpha$', r'$\log_{10} (\Omega_{\rm ref})$']
+                    self.spectral_prior = self.lowpowerlaw_prior
             else:
                 raise ValueError("lowpowerlaw is an inference-only spectral submodel. Use the powerlaw submodel for injections.")
         
@@ -800,7 +806,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
                 
-                self.spatial_parameters = [r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$z_{\mathrm{h}}$']
                 self.prior = self.mw1parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -835,7 +841,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 ## set response kwargs
                 response_kwargs['masked_skymap'] = self.masked_skymap
                 
-                self.spatial_parameters = [r'$r_\mathrm{h}$',r'$z_\mathrm{h}$']
+                self.spatial_parameters = [r'$r_{\mathrm{h}}$',r'$z_{\mathrm{h}}$']
                 self.prior = self.mw2parameter_prior
                 self.cov = self.compute_cov_parameterized_asgwb
             
@@ -860,10 +866,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         ## (we need this in the multi-model or duplicate model case)
         if suffix != '':
             if injection:
-                updated_truevals = {parameter+suffix:self.truevals[parameter] for parameter in self.parameters}
+                updated_truevals = {suffix+' '+parameter:self.truevals[parameter] for parameter in self.parameters}
                 self.truevals = updated_truevals
-            updated_spectral_parameters = [parameter+suffix for parameter in self.spectral_parameters]
-            updated_spatial_parameters = [parameter+suffix for parameter in self.spatial_parameters]
+            updated_spectral_parameters = [suffix+' '+parameter for parameter in self.spectral_parameters]
+            updated_spatial_parameters = [suffix+' '+parameter for parameter in self.spatial_parameters]
             updated_parameters = updated_spectral_parameters+updated_spatial_parameters
             if len(updated_parameters) != len(self.parameters):
                 raise ValueError("If you've added a new variety of parameters above, you'll need to update this bit of code too!")
@@ -1458,7 +1464,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0  = -3*theta[0] - 11
+        log_omega0  = -1.5*theta[0] - 11
         
         return [log_omega0]
     
@@ -1485,11 +1491,38 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        alpha       =  10*theta[0] - 5
-        log_omega0  = -10*theta[1] - 14
+        alpha       =  6*theta[0] - 3
+        log_omega0  = -11*theta[1] - 12.6
         
         return [alpha, log_omega0]
     
+    def flatlowpowerlaw_prior(self,theta):
+
+
+        '''
+        Prior function for an isotropic stochastic backgound analysis. Imposes an upper constraint on the prior to aid in spectral separation.
+
+        Parameters
+        -----------
+
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+
+        Returns
+        ---------
+
+        theta   :   float
+            theta with each element rescaled. The elements are  interpreted as alpha and log(Omega0)
+
+        '''
+
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        log_omega0  = -11*theta[0] - 12.6
+
+        return [log_omega0]
+
     def broken_powerlaw_prior(self,theta):
 
 
@@ -1691,7 +1724,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
-        log_omega0 = -2*theta[0] - 7
+        log_omega0 = -3*theta[0] - 7
         log_fcut = -0.7*theta[1] - 2.4
         log_fscale = -2*theta[2] - 2
         
@@ -1723,7 +1756,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 6
+        log_omega0 = -3*theta[1] - 7
         log_fcut = -0.7*theta[2] - 2.4
         
         
@@ -1754,7 +1787,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         # Unpack: Theta is defined in the unit cube
         # Transform to actual priors
         alpha = 2*theta[0]
-        log_omega0 = -3*theta[1] - 6
+        log_omega0 = -3*theta[1] - 7
         log_fcut = -0.7*theta[2] - 2.4
         log_fscale = -2*theta[3] - 2
         
@@ -2183,7 +2216,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         summ_response_mat (array) : the sky-integrated response (3 x 3 x frequency x time)
         
         '''
-        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
+        ## sacrifice einsum efficiency for memory usage here
+        ## due to the extreme memory requirement of the pixel-basis unconvolved anisotropic responses
+        convolved_response = jnp.zeros(self.response_mat.shape[:-1])
+        for ii in range(len(pixelmap)):
+            convolved_response = convolved_response + self.response_mat[:,:,:,:,ii]*pixelmap[ii]
+        return self.dOmega*convolved_response
+    #        return (self.dOmega)*jnp.einsum('ijklm,m', self.response_mat, pixelmap)
     
     def process_astro_skymap_injection(self,skymap):
         '''
@@ -2410,17 +2449,22 @@ class Model():
         self.parameters['all'] = all_parameters
         
         ## Having initialized all the components, now compute the LISA response functions
-        t1 = time.time()
-        fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
-        t2 = time.time()
-        print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+#        t1 = time.time()
+#        fast_rx = fast_geometry(self.params)
+#        fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.submodels[smn] for smn in self.submodel_names if smn !='noise'],self.params['tdi_lev'])
+#        t2 = time.time()
+#        print("Time elapsed for calculating the LISA response functions for all submodels via joint computation is {} s.".format(t2-t1))
+#        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+#        del fast_rx
         
         ## update colors as needed
         catch_color_duplicates(self)
         
         ## assign reference to data for use in likelihood
         self.rmat = rmat
+        
+        return
+    
     
 #    @jax.jit
     def prior(self,unit_theta):
@@ -2559,10 +2603,7 @@ class Injection():#geometry,sph_geometry):
         ## parallelization has been depreciated now that the response function calculations are handled elsewhere
         for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
             print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-            t1 = time.time()
             cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
-            t2 = time.time()
-            print("Time elapsed for component {} is {} s.".format(component_name,t2-t1))
             self.components[component_name] = cm
             self.truevals[component_name] = cm.truevals
     
