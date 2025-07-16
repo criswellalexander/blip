@@ -48,7 +48,10 @@ class Population():
         self.popdict = popdict
         
         ## load the population
-        pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'])
+        if self.popdict['coldict'] is None:
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'])
+        else:
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'],coldict=self.popdict['coldict'])
         
         ## get the skymap
         self.skymap = self.pop2map(pop,self.params['nside'],self.params['dur']*u.s,self.params['fmin'],self.params['fmax'])
