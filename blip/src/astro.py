@@ -508,7 +508,7 @@ class Galaxy_Model():
     def mw_mapmaker_1par(self,zh):
         '''
         
-        Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk.
+        Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).
         zh is the vertical scale height in kpc. 
         The distribution is azimuthally symmetric in the galactocentric frame.
         
@@ -534,7 +534,7 @@ class Galaxy_Model():
     def mw_mapmaker_2par(self,rh,zh):
         '''
         
-        Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk.
+        Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).
         rh is the radial scale height in kpc, zh is the vertical scale height in kpc. 
         The distribution is azimuthally symmetric in the galactocentric frame.
         
@@ -560,7 +560,7 @@ class Galaxy_Model():
         
 def generate_galactic_foreground(rh,zh,nside):
     '''
-    Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk.
+    Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).
     rh is the radial scale height in kpc, zh is the vertical scale height in kpc. 
     Thin disk has rh=2.9kpc, zh=0.3kpc; Thick disk has rh=3.31kpc, zh=0.9kpc. Defaults to thin disk. 
     The distribution is azimuthally symmetric in the galactocentric frame.
@@ -569,7 +569,7 @@ def generate_galactic_foreground(rh,zh,nside):
     ----------
     rh (float)  : MW DWD population radial scale height
     zh (float)  : MW DWD population vertical scale height
-    nside (int) : healpix nside (skymap resolutio)
+    nside (int) : healpix nside (skymap resolution)
     
     Returns
     ---------
@@ -618,6 +618,116 @@ def generate_galactic_foreground(rh,zh,nside):
     
     return astro_map
 
+def generate_galactic_bulge(nside,rho_c=1,r_cut=2.1, r0=0.075,alpha=1.8,q=0.5):
+    '''
+    Generate the bulge component of a galactic white dwarf binary foreground modeled after the Breivik et al. (2020) bulge+disk spatial model. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).
+    The distribution is azimuthally symmetric in the galactocentric frame.
+
+    Arguments
+    ----------
+    nside (int) : healpix nside (skymap resolution)
+
+    rho_c (float) : A fiducial central density for the galaxy (the normalization is not important for BLIP simulations, as the skymap will be normalized such that the sky integral is one.) Default 1.
+    r_cut (float) : The cutoff radius of the bulge. Default 2.1 kpc.
+    r0 (float) : Scale radius of the bulge. Default 0.075 kpc.
+    alpha (float) Bulge density power law index. Default 1.8.
+    q (float) : Bulge axis ratio. Default 0.5.
+
+
+    Returns
+    ---------
+    astro_map : float
+        Healpy GW power skymap of the Galactic bulge contribution to the foreground.
+    log_DWD_FG_map : float
+        Healpy log GW power skymap. For plotting purposes.
+
+    '''
+    ## set grid density
+    grid_fill = 200
+    ## create grid *in cartesian coordinates*
+    ## size of density grid gives enough padding around the galactic plane without becoming needlessly large
+    ## distances in kpc
+    gal_rad = 5
+    xs = np.linspace(-gal_rad,gal_rad,grid_fill)
+    ys = np.linspace(-gal_rad,gal_rad,grid_fill)
+    zs = np.linspace(-5,5,grid_fill)
+    ## filter to only bulge range while keeping same 3D grid resolution
+    xs = xs[(xs>-5)*(xs<5)]
+    ys = ys[(ys>-5)*(ys<5)]
+    x, y, z = np.meshgrid(xs,ys,zs)
+    r = np.sqrt(x**2 + y**2)
+    ## Calculate density distribution
+    # disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh)
+    bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
+    DWD_density = bulge_density
+    ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
+    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
+    SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
+    ## Calculate GW power
+    DWD_powers = DWD_density*(np.array(SSBc.distance))**-2
+    ## Filter nearby grid points (cut out 2kpc sphere)
+    ## This is a temporary soln. Later, we will want to do something more subtle, sampling a DWD pop from
+    ## the density distribution and filtering out resolveable SNR>80 binaries
+    DWD_unresolved_powers = DWD_powers*(np.array(SSBc.distance) > 2)
+    ## Transform to healpix basis
+    pixels = hp.ang2pix(nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True)
+    ## Create skymap
+    ## Bin
+    astro_map = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
+
+    return astro_map
+
+def generate_galactic_disk(rh,zh,nside):
+    '''
+    Generate the disk component of a galactic white dwarf binary foreground modeled after the Breivik et al. (2020) bulge+disk spatial model. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).
+    The distribution is azimuthally symmetric in the galactocentric frame.
+
+    Arguments
+    ----------
+    rh (float)  : MW DWD population radial disk scale height
+    zh (float)  : MW DWD population vertical disk scale height
+    nside (int) : healpix nside (skymap resolution)
+
+    Returns
+    ---------
+    astro_map : float
+        Healpy GW power skymap of the Galactic disk contribution to the foreground.
+    log_DWD_FG_map : float
+        Healpy log GW power skymap. For plotting purposes.
+
+    '''
+    ## set grid density
+    grid_fill = 200
+    ## create grid *in cartesian coordinates*
+    ## size of density grid gives enough padding around the galactic plane without becoming needlessly large
+    ## distances in kpc
+    gal_rad = 20
+    xs = np.linspace(-gal_rad,gal_rad,grid_fill)
+    ys = np.linspace(-gal_rad,gal_rad,grid_fill)
+    zs = np.linspace(-5,5,grid_fill)
+    x, y, z = np.meshgrid(xs,ys,zs)
+    r = np.sqrt(x**2 + y**2)
+    ## Calculate density distribution
+    rho_c = 1
+    disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh)
+    # bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
+    DWD_density = disk_density
+    ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
+    gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
+    SSBc = gc.transform_to(cc.BarycentricMeanEcliptic)
+    ## Calculate GW power
+    DWD_powers = DWD_density*(np.array(SSBc.distance))**-2
+    ## Filter nearby grid points (cut out 2kpc sphere)
+    ## This is a temporary soln. Later, we will want to do something more subtle, sampling a DWD pop from
+    ## the density distribution and filtering out resolveable SNR>80 binaries
+    DWD_unresolved_powers = DWD_powers*(np.array(SSBc.distance) > 2)
+    ## Transform to healpix basis
+    pixels = hp.ang2pix(nside,np.array(SSBc.lon),np.array(SSBc.lat),lonlat=True)
+    ## Create skymap
+    ## Bin
+    astro_map = np.bincount(pixels.flatten(),weights=DWD_unresolved_powers.flatten(),minlength=hp.nside2npix(nside))
+
+    return astro_map
 
 def generate_sdg(nside,ra=80.21496, dec=-69.37772, D=50, r=2.1462, N=2169264):
     
