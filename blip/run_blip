@@ -717,7 +717,7 @@ def blip(paramsfile='params.ini',resume=False):
             ## step through the (possibly multiple) populations and tweak formatting for the delimiters
             ## also enforce the required keys and substitute defaults if optional setting isn't given
             required_keys = ['popfile','columns','delimiter']
-            pop_defaults = {'snr_cut':7,'name':None}
+            pop_defaults = {'snr_cut':7,'name':None,'coldict':None}
             for key in inj['popdict'].keys():
                 ## make sure it corresponds to an injection
                 if key not in inj_component_names:
