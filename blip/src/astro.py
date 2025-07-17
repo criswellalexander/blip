@@ -59,7 +59,8 @@ class Population():
         ## spectrum
         if not map_only:
             ## PSD at injection frequency binning
-            self.PSD = self.pop2spec(pop,self.frange,self.params['dur']*u.s,SNR_cut=self.popdict['snr_cut'],return_median=False,plot=False)
+            self.PSD = self.pop2spec(pop,self.frange,self.params['dur']*u.s,
+                                     SNR_cut=self.popdict['snr_cut'],return_median=False,plot=True,saveto=params['out_dir'])
     
             ## PSD at data frequencies
             self.fftfreqs = np.fft.rfftfreq(int(self.params['fs']*self.params['seglen']),1/self.params['fs'])[1:]
