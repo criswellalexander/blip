@@ -949,7 +949,7 @@ if __name__ == '__main__':
             fmt = {}
         cornermaker(post, params, parameters, inj, Model, Injection=Injection,
                     split_by=args.cornersplit, smooth=args.cornersmooth,
-                    mpl_settings=fmt,maxticks=args.maxticks)
+                    mpl_settings=fmt,maxticks=args.cornermaxticks)
     if not args.nofit:
         ## reset the matplotlib style setting
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
