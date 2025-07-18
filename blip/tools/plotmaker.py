@@ -883,9 +883,6 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None,
         ## plot aesthetics
         fig.align_ylabels()
         fig.align_xlabels()
-        
-        if tight_layout:
-            plt.tight_layout()
 
         ## Save posterior
         if saveto is not None:
@@ -894,7 +891,10 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None,
             fig_path_base = (params['out_dir'] + '/corners_' + subset_name_i).replace('//','/')
         
         for ext in ['.png','.pdf']:
-            plt.savefig(fig_path_base+ext, dpi=200, bbox_inches='tight')
+            if tight_layout:
+                plt.savefig(fig_path_base+ext, dpi=300, bbox_inches='tight')
+            else:
+                plt.savefig(fig_path_base+ext, dpi=300)
             print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
         plt.close()
         
