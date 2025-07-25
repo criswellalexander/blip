@@ -842,7 +842,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.parameterized_map = True
 
                 ## Initialize the galaxy grid
-                self.galaxy = astro.Galaxy_Model(self.params['nside'],gal_rad=14,gal_height=6,max_rh=3.5,max_zh=1.5,fix_rh=self.fixedvals['rh'])
+                self.galaxy = astro.Galaxy_Model(self.params['nside'],grid_res=0.1,
+                                                 gal_rad=14,gal_height=6,max_rh=3.5,max_zh=1.5,fix_rh=self.fixedvals['rh'])
                 self.max_sky_extent = self.galaxy.max_skymap
                 
                 ## Set the parameterized spatial model function
