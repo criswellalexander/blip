@@ -895,7 +895,7 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None,
             print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
 
         ## just save the corner fig for small tweaks
-        with open(params['outdir'] + '/cornerfig.pickle', 'wb') as figfile:
+        with open(params['out_dir'] + '/cornerfig.pickle', 'wb') as figfile:
             pickle.dump(fig,figfile)
 
         plt.close()
