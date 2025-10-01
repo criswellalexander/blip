@@ -2982,6 +2982,7 @@ class Injection():#geometry,sph_geometry):
                 hp.graticule()
             
             if save_figures:
+                np.savetxt(self.params['out_dir']+'/inj_pixelmap_data.txt',Omegamap_pix)
                 plt.savefig(self.params['out_dir'] + '/inj_pixelmap'+component_name+'.png', dpi=150)
                 print('Saving injection pixel map at ' +  self.params['out_dir'] + '/inj_pixelmap'+component_name+'.png')
                 plt.close()
