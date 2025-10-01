@@ -30,3 +30,5 @@ WD_Galactic_Foreground.ipynb
 quick_*
 build/*
 params_run*
+BLiP.egg-info
+blip.egg-info
