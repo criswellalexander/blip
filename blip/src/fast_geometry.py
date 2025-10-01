@@ -70,8 +70,9 @@ class fast_geometry(sph_geometry):
             xp = np
         
         ## shared memory handling
-        if self.gpu and os.environ['TF_FORCE_UNIFIED_MEMORY']:
+        if self.gpu and ('TF_FORCE_UNIFIED_MEMORY' in os.environ.keys()) and os.environ['TF_FORCE_UNIFIED_MEMORY']:
             self.shared_memory = True
+            print("Using shared memory.")
         else:
             self.shared_memory = False
 
@@ -204,6 +205,10 @@ class fast_geometry(sph_geometry):
                 if (sm.response_wrapper_func == self.wrappers[jj][0]) and np.array_equal(rargs,self.wrappers[jj][1]):
                     if not self.plot_flag:
                         sm.response_mat = self.unique_responses[jj]
+                        ## reduce memory usage of the parameterized pixel-basis models by casting to real float64
+                        ## do need to be careful with this because we need complex128 for the spherical harmonic models
+                        if hasattr(sm,"basis") and sm.basis=='pixel':
+                            sm.response_mat = xp.real(sm.response_mat)
                         ## FIX LATER --- aliasing for now, should standardize everything to sm.response_mat later
                         sm.summ_response_mat = sm.response_mat 
                         if sm.injection:

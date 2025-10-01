@@ -48,7 +48,10 @@ class Population():
         self.popdict = popdict
         
         ## load the population
-        pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'])
+        if self.popdict['coldict'] is None:
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'])
+        else:
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'],coldict=self.popdict['coldict'])
         
         ## get the skymap
         self.skymap = self.pop2map(pop,self.params['nside'],self.params['dur']*u.s,self.params['fmin'],self.params['fmax'])
@@ -59,7 +62,7 @@ class Population():
         ## spectrum
         if not map_only:
             ## PSD at injection frequency binning
-            self.PSD = self.pop2spec(pop,self.frange,self.params['dur']*u.s,SNR_cut=self.popdict['snr_cut'],return_median=False,plot=False)
+            self.PSD = self.pop2spec(pop,self.frange,self.params['dur']*u.s,SNR_cut=self.popdict['snr_cut'],return_median=False,plot=False) #True,saveto=self.params['out_dir'])
     
             ## PSD at data frequencies
             self.fftfreqs = np.fft.rfftfreq(int(self.params['fs']*self.params['seglen']),1/self.params['fs'])[1:]
@@ -166,7 +169,7 @@ class Population():
         Returns:
             binary_psds (1D array of floats): Monochromatic PSDs for each binary
         '''
-        binary_psds = 0.5*t_obs*hs**2
+        binary_psds = t_obs*hs**2
         
         return binary_psds
     
@@ -237,10 +240,9 @@ class Population():
         PSDs_unres = cls.get_binary_psd(hs,4*u.yr)
         
         ## get BLIP frequency bins
-        log_frange = np.log10(frange)
-        log_bin_width = log_frange[1]-log_frange[0]
-        bins = 10**np.append(log_frange-log_bin_width/2,log_frange[-1]+log_bin_width/2)
-        bin_widths = bins[1:] - bins[:-1]
+        bin_width = frange[1] - frange[0]
+        bin_widths = bin_width
+        bins = np.append(frange - bin_width/2,frange[-1]+bin_width/2)
         
         ## check minimum frequency resolution
         ## set minimum bin width to delta_f = 1/T_obs
@@ -297,14 +299,12 @@ class Population():
             plt.savefig(saveto + '/population_injection_zoom.png', dpi=150)
             plt.close()
         
-        
-        ## factor of 1/2 is for phase-averaging to account for interference
         if return_median:
-            spectrum =  0.5*fg_PSD_binned/bin_widths *u.Hz*u.s
-            median_spectrum = 0.5*runmed_binned/bin_widths *u.Hz*u.s
+            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
+            median_spectrum = runmed_binned/bin_widths *u.Hz*u.s
             return spectrum, median_spectrum
         else:
-            spectrum =  0.5*fg_PSD_binned/bin_widths *u.Hz*u.s
+            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
             return spectrum
      
     @staticmethod
