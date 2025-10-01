@@ -671,7 +671,7 @@ def blip(paramsfile='params.ini',resume=False):
     ## pop out to set sph flags
     params['sph_flag'] = ('sph' in sph_check) #or ('hierarchical' in sph_check)
     ## set sph flag to false if both inj and model basis are pixel
-    if params['model_basis']=='sph' or inj['inj_basis']=='sph':
+    if params['model_basis']=='sph' or inj.get('inj_basis', 'sph')=='sph':
         params['sph_flag'] = True
         params['lmax'] = int(config.get("params", "lmax"))
     
