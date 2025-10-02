@@ -971,6 +971,7 @@ class geometry(sph_geometry):
             R13[ii, :] = dOmega/(2)*np.sum( (np.conj(Fplus1)*Fplus3 + np.conj(Fcross1)*Fcross3) * skymap_nonzero[None, :], axis=1)
             R23[ii, :] = dOmega/(2)*np.sum( (np.conj(Fplus2)*Fplus3 + np.conj(Fcross2)*Fcross3) * skymap_nonzero[None, :], axis=1)
 
+
         response_mat = np.array([ [R1, R12, R13] , [np.conj(R12), R2, R23], [np.conj(R13), np.conj(R23), R3] ])
 
         return response_mat
