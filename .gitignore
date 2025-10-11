@@ -1,7 +1,6 @@
 *.pyc
 *.png
 *.pdf
-test*
 *~
 Storage*
 WSL*
