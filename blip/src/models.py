@@ -544,10 +544,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.convolve_inj_response_mat = self.sph_convolve_inj_response_mat
         
         ## Handle all the static (non-inferred) astrophysical spatial distributions together due to their similarities
-        elif self.spatial_model_name in ['galaxy','dwarfgalaxy','lmc','pointsource','twopoints','pointsources','population','fixedgalaxy','fixedlmc','hotpixel','pixiso','popmap']:
+        elif self.spatial_model_name in ['galaxy','mwdisk','mwbulge','dwarfgalaxy','lmc','pointsource','twopoints','pointsources','population','fixedgalaxy','fixedlmc','fixeddisk','fixedbulge','hotpixel','pixiso','popmap']:
             
-            ## the astrophysical spatial models are mostly injection-only, with some exceptions.
-            if self.spatial_model_name in ['galaxy','dwarfgalaxy','lmc','pointsource','twopoints','population'] and not injection:
+            ## some of the astrophysical spatial models are injection-only.
+            if self.spatial_model_name in ['galaxy','mwdisk','mwbulge','dwarfgalaxy','lmc','pointsource','twopoints','population'] and not injection:
                 raise ValueError("This model is injection-only.")
             
             self.has_map = True
@@ -576,6 +576,29 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(self.injvals['rh'],self.injvals['zh'],self.params['nside'])
+                ## mask to only the first four scale heights
+                mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
+                self.skymap = self.skymap * mask
+            elif self.spatial_model_name == 'mwdisk':
+                ## store the high-level MW truevals for the hierarchical analysis
+                self.truevals[r'$r_{\mathrm{h}}$'] = self.injvals['rh']
+                self.truevals[r'$z_{\mathrm{h}}$'] = self.injvals['zh']
+                ## plotting stuff
+                self.fancyname = "Galactic Disk"
+                self.subscript = r"_{\mathrm{MWD}}"
+                self.color = 'mediumorchid'
+                ## generate skymap
+                self.skymap = astro.generate_galactic_disk(self.injvals['rh'],self.injvals['zh'],self.params['nside'])
+                ## mask to only the first four scale heights
+                mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
+                self.skymap = self.skymap * mask
+            elif self.spatial_model_name == 'mwbulge':
+                ## plotting stuff
+                self.fancyname = "Galactic Bulge"
+                self.subscript = r"_{\mathrm{MWB}}"
+                self.color = 'teal'
+                ## generate skymap
+                self.skymap = astro.generate_galactic_bulge(self.params['nside'])
                 ## mask to only the first four scale heights
                 mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
                 self.skymap = self.skymap * mask
@@ -667,6 +690,40 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.color = 'mediumorchid'
                 ## generate skymap
                 self.skymap = astro.generate_galactic_foreground(rh,zh,self.params['nside'])
+                ## mask to only the first four scale heights
+                mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
+                self.skymap = self.skymap * mask
+                self.fixed_map = True
+            elif self.spatial_model_name == 'fixeddisk':
+                ## get the fixed values
+                if 'rh' in self.fixedvals.keys():
+                    rh = self.fixedvals['rh']
+                else:
+                    print("Warning: Using fixeddisk spatial model but no 'rh' fixed value was provided. Defaulting to Breivik+2020 thin disk galaxy (rh = 2.9 kpc.)")
+                    rh = 2.9
+                if 'zh' in self.fixedvals.keys():
+                    zh = self.fixedvals['zh']
+                else:
+                    print("Warning: Using fixeddisk spatial model but no 'zh' fixed value was provided. Defaulting to Breivik+2020 thin disk galaxy (zh = 0.3 kpc).")
+                    zh = 0.3
+                ## plotting stuff
+                self.fancyname = "Galactic Disk"
+                self.subscript = r"_{\mathrm{MWD}}"
+                self.color = 'mediumorchid'
+                ## generate skymap
+                self.skymap = astro.generate_galactic_disk(rh,zh,self.params['nside'])
+                ## mask to only the first four scale heights
+                mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
+                self.skymap = self.skymap * mask
+                self.fixed_map = True
+            elif self.spatial_model_name == 'fixedbulge':
+                print("Using fixedbulge spatial model with the default bulge values given in Criswell+25a.")
+                ## plotting stuff
+                self.fancyname = "Galactic Bulge"
+                self.subscript = r"_{\mathrm{MWB}}"
+                self.color = 'teal'
+                ## generate skymap
+                self.skymap = astro.generate_galactic_bulge(self.params['nside'])
                 ## mask to only the first four scale heights
                 mask = self.skymap > (1/np.e**4)*np.max(self.skymap)
                 self.skymap = self.skymap * mask
@@ -785,7 +842,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.parameterized_map = True
 
                 ## Initialize the galaxy grid
-                self.galaxy = astro.Galaxy_Model(self.params['nside'],gal_rad=14,gal_height=6,max_rh=3.5,max_zh=1.5,fix_rh=self.fixedvals['rh'])
+                self.galaxy = astro.Galaxy_Model(self.params['nside'],grid_res=0.1,
+                                                 gal_rad=14,gal_height=6,max_rh=3.5,max_zh=1.5,fix_rh=self.fixedvals['rh'])
                 self.max_sky_extent = self.galaxy.max_skymap
                 
                 ## Set the parameterized spatial model function
@@ -2924,6 +2982,7 @@ class Injection():#geometry,sph_geometry):
                 hp.graticule()
             
             if save_figures:
+                np.savetxt(self.params['out_dir']+'/inj_pixelmap_data.txt',Omegamap_pix)
                 plt.savefig(self.params['out_dir'] + '/inj_pixelmap'+component_name+'.png', dpi=150)
                 print('Saving injection pixel map at ' +  self.params['out_dir'] + '/inj_pixelmap'+component_name+'.png')
                 plt.close()
