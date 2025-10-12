@@ -162,39 +162,6 @@ class LISAdata():
 
         return h1, h2, h3, tarr
 
-    def read_data(self):
-
-        '''
-        Read mldc or other external domain data from an ascii txt file. Since this was used primarily for
-        the MLDC, it assumes that the data is given in X,Y and Z channels.
-        Returns
-        ---------
-
-        h1, h2, h3 : float
-            Time series data for the three TDI channels
-
-
-        '''
-
-        hoft = np.loadtxt(self.params['datafile'])
-
-        fs_default = 1.0/(hoft[1, 0] - hoft[0, 0])
-
-        ## Read in the duration seconds of data + one segment of buffer
-        end_idx = int((self.params['dur'] + self.params['seglen'])*fs_default)
-
-        ## the mldc data is X,Y,Z tdi
-        times, h1, h2, h3 = hoft[0:end_idx, 0], hoft[0:end_idx, 1], hoft[0:end_idx, 2], hoft[0:end_idx, 3]
-
-        delt = times[1] - times[0]
-
-
-        ## Check if the requested sampel rate is consistant
-        if self.params['fs'] != 1.0/delt:
-            self.params['fs'] = 1.0/delt
-
-        return h1, h2, h3, times
-
     def process_external_data(self):
         '''
         Just a wrapper function to use the methods the LISAdata class to
@@ -203,7 +170,7 @@ class LISAdata():
         tracking and converts to strain data.
         '''
 
-        h1, h2, h3, self.timearray = self.read_data()
+        h1, h2, h3, self.timearray = self._read_mldc_data()
 
         # Calculate other tdi combinations if necessary.
         if self.params['tdi_lev'] == 'aet':
@@ -344,4 +311,36 @@ class LISAdata():
 
         return np.array(r1), np.array(r2), np.array(r3), np.array(fdata), np.array(tsegstart), np.array(tsegmid)
 
+    def _read_mldc_data(self):
+
+        '''
+        Read mldc or other external domain data from an ascii txt file. Since this was used primarily for
+        the MLDC, it assumes that the data is given in X,Y and Z channels.
+        Returns
+        ---------
+
+        h1, h2, h3 : float
+            Time series data for the three TDI channels
+
+
+        '''
+
+        hoft = np.loadtxt(self.params['datafile'])
+
+        fs_default = 1.0/(hoft[1, 0] - hoft[0, 0])
+
+        ## Read in the duration seconds of data + one segment of buffer
+        end_idx = int((self.params['dur'] + self.params['seglen'])*fs_default)
+
+        ## the mldc data is X,Y,Z tdi
+        times, h1, h2, h3 = hoft[0:end_idx, 0], hoft[0:end_idx, 1], hoft[0:end_idx, 2], hoft[0:end_idx, 3]
+
+        delt = times[1] - times[0]
+
+
+        ## Check if the requested sampel rate is consistant
+        if self.params['fs'] != 1.0/delt:
+            self.params['fs'] = 1.0/delt
+
+        return h1, h2, h3, times
     
