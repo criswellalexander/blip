@@ -5,37 +5,95 @@ import configparser
 import numpy as np
 import pickle
 
+# Below are the default values for some options in the configuration file.
+# These are not the only required options.
+# A few options have fallback values that are set dynamically depending on
+# the values of other options; these don't have defaults.
+
+DEFAULTS_SECTION_PARAMS = {
+    "seglen": "1e5",
+    "fs": "0.25",
+    "Shfile": "LISA_2017_PSD_M.npy",
+    "load_data": "0",
+    "datatype": "strain",
+    "datafile": "None",
+    "fref": "0.001",
+    "fixedvals": "None",
+    "alias": "{}",
+    "tdi_lev": "xyz",
+    "lisa_config": "orbiting",
+    "model_basis": "pixel",
+    "tstart": "0.0",
+}
+
+DEFAULTS_SECTION_INJ = {
+    "loadInj": "0",
+    "inj_only": "0",
+    "inj_basis": "pixel",
+    "parallel_inj": "0",
+    "response_nthread": "1",
+    "population_params": "None",
+}
+
+DEFAULTS_SECTION_RUN_PARAMS = {
+    "doPreProc": "0",
+    "input_spectrum": "data_spectrum.npz",
+    "projection": "E",
+    "FixSeed": "0",
+    "Nthreads": "1",
+    "N_GPU": "0",
+    "colormap": "magma",
+    "nlive": "800",
+    "sample_method": "rwalk",
+    "Nburn": "1000",
+    "Nsamples": "1000",
+    "show_progress": "1",
+    "checkpoint": "0",
+    "checkpoint_at": "end",
+    "additional_samples": "0",
+}
+
 
 # FIXME the `resume` parameter should not be here since it's irrelevant to
 # parsing the config
 def parse_config(paramsfile: str, resume: bool):
     "Parse a configuration file. Returns (params, inj, misc)."
 
+    # These are the returned dictionaries, containing a *valid* configuration
+    # with options that already have the right types.
     # TODO clearly specify what counts as valid here. A good start would be
     # to use TypedDicts.
-    params = {}
-    inj = {}
-    misc = {}
+    params = {}  # basically combines `params` and `run_params` sections
+    inj = {}  # basically receives options from the `inj` section
+    misc = {}  # receives a few run parameters and the generated seed
 
-    # TODO use mapping protocol access instead of the legacy .get() API
-    # TODO set defaults (not fallbacks!) where applicable
     config = configparser.ConfigParser()
+    config.read_dict(
+        {
+            "params": DEFAULTS_SECTION_PARAMS,
+            "inj": DEFAULTS_SECTION_INJ,
+            "run_params": DEFAULTS_SECTION_RUN_PARAMS,
+        }
+    )
     config.read(paramsfile)
+    config_params = config["params"]
+    config_inj = config["inj"]
+    config_run_params = config["run_params"]
 
     # Params Dict
-    params["fmin"] = float(config.get("params", "fmin"))
-    params["fmax"] = float(config.get("params", "fmax"))
-    params["dur"] = float(config.get("params", "duration"))
-    params["seglen"] = float(config.get("params", "seglen", fallback=1e5))
-    params["fs"] = float(config.get("params", "fs", fallback=0.25))
-    params["Shfile"] = config.get("params", "Shfile", fallback="LISA_2017_PSD_M.npy")
-    params["load_data"] = int(config.get("params", "load_data", fallback=0))
-    params["datatype"] = str(config.get("params", "datatype", fallback="strain"))
-    params["datafile"] = str(config.get("params", "datafile", fallback=None))
+    params["fmin"] = float(config_params["fmin"])
+    params["fmax"] = float(config_params["fmax"])
+    params["dur"] = float(config_params["duration"])
+    params["seglen"] = float(config_params["seglen"])
+    params["fs"] = float(config_params["fs"])
+    params["Shfile"] = config_params["Shfile"]
+    params["load_data"] = int(config_params["load_data"])
+    params["datatype"] = config_params["datatype"]
+    params["datafile"] = config_params["datafile"]
     ## default fref is 1mHz
     ## until we update the prior structure, using other reference frequencies may lead to unintended behavior in the prior bounds
     ## in the new prior structure, the default astrophysical prior bounds should scale with fref
-    params["fref"] = float(config.get("params", "fref", fallback=0.001))
+    params["fref"] = float(config_params["fref"])
     if params["fref"] != 0.001:
         print(
             "Warning: reference frequency set to a value other than 1 mHz (fref={} Hz).".format(
@@ -46,10 +104,10 @@ def parse_config(paramsfile: str, resume: bool):
             "This may lead to unexpected prior behavior, as the prior bounds are based on a reference frequency of 1 mHz!"
         )
 
-    params["model"] = str(config.get("params", "model"))
+    params["model"] = str(config_params["model"])
 
     ## get the model fixed values, passed as a dict
-    fixedvals = eval(str(config.get("params", "fixedvals", fallback="None")))
+    fixedvals = eval(str(config_params["fixedvals"]))
 
     params["fixedvals"] = {}
     if fixedvals is not None:
@@ -76,15 +134,13 @@ def parse_config(paramsfile: str, resume: bool):
                         name
                     ]
 
-    params["alias"] = eval(str(config.get("params", "alias", fallback="{}")))
+    params["alias"] = eval(config_params["alias"])
 
-    params["tdi_lev"] = str(config.get("params", "tdi_lev", fallback="xyz"))
-    params["lisa_config"] = str(
-        config.get("params", "lisa_config", fallback="orbiting")
-    )
-    params["nside"] = int(config.get("params", "nside"))
-    params["model_basis"] = str(config.get("params", "model_basis", fallback="pixel"))
-    params["tstart"] = float(config.get("params", "tstart", fallback=0))
+    params["tdi_lev"] = config_params["tdi_lev"]
+    params["lisa_config"] = config_params["lisa_config"]
+    params["nside"] = int(config_params["nside"])
+    params["model_basis"] = config_params["model_basis"]
+    params["tstart"] = float(config_params["tstart"])
 
     ## see if we need to initialize the spherical harmonic subroutines
     sph_check = [
@@ -92,9 +148,9 @@ def parse_config(paramsfile: str, resume: bool):
     ]
 
     # Injection Dict
-    inj["doInj"] = int(config.get("inj", "doInj"))
-    inj["loadInj"] = int(config.get("inj", "loadInj", fallback=0))
-    inj["inj_only"] = int(config.get("inj", "inj_only", fallback=0))
+    inj["doInj"] = int(config_inj["doInj"])
+    inj["loadInj"] = int(config_inj["loadInj"])
+    inj["inj_only"] = int(config_inj["inj_only"])
 
     if inj["doInj"]:
         ## first see if we are loading the injection
@@ -103,12 +159,16 @@ def parse_config(paramsfile: str, resume: bool):
                 raise ValueError(
                     "Both loadInj and inj_only flags are set to True. This won't accomplish anything..."
                 )
-            inj["injdir"] = str(config.get("inj", "injdir"))
+            inj["injdir"] = config_inj["injdir"]
+
+            # FIXME why are we pickling configuration dictionaries?
+            # they can be saved as plain .ini files by configparser!
             ## get the already-generated injection dict
             with open(inj["injdir"] + "/config.pickle", "rb") as paramfile:
                 ## things are loaded from the pickle file in the same order they are put in
                 loaded_params = pickle.load(paramfile)
                 loaded_inj = pickle.load(paramfile)
+
             ## for this to work, all params that impact the data/response times/frequencies/types can't change
             ## but you can change e.g., recovery model, sampler, etc.
             required_immutable = [
@@ -142,13 +202,13 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
-            inj["injection"] = str(config.get("inj", "injection"))
+            inj["injection"] = config_inj["injection"]
 
             ## get the injection basis
-            inj["inj_basis"] = str(config.get("inj", "inj_basis", fallback="pixel"))
+            inj["inj_basis"] = config_inj["inj_basis"]
 
             ## get the injection truevals, passed as a dict
-            truevals = eval(str(config.get("inj", "truevals")))
+            truevals = eval(config_inj["truevals"])
             ## enforce that the keys of the truevals dict correspond to the injected models
             ## at this point we will only make sure that all the keys are in the injection string
             ## (not all injections will have truevals; e.g., population injections)
@@ -159,7 +219,7 @@ def parse_config(paramsfile: str, resume: bool):
                 )
 
             ## injection per-component multithreading
-            inj["parallel_inj"] = int(config.get("inj", "parallel_inj", fallback=0))
+            inj["parallel_inj"] = int(config_inj["parallel_inj"])
 
             ## if parallel_inj is True but there is only one component, set parallel_inj to False
             #            if len(inj_component_names) == 1 and inj['parallel_inj']:
@@ -167,11 +227,10 @@ def parse_config(paramsfile: str, resume: bool):
 
             if inj["parallel_inj"]:
                 inj["inj_nthread"] = int(
-                    config.get("inj", "inj_nthread", fallback=len(inj_component_names))
+                    config_inj.get("inj_nthread", fallback=len(inj_component_names))
                 )
-                inj["response_nthread"] = int(
-                    config.get("inj", "response_nthread", fallback=1)
-                )
+                inj["response_nthread"] = int(config_inj["response_nthread"])
+
                 ## give preference to response multi-threading
                 if inj["inj_nthread"] > 1 and inj["response_nthread"] > 1:
                     print(
@@ -184,6 +243,7 @@ def parse_config(paramsfile: str, resume: bool):
                         "Giving precedence to response multiprocessing, setting inj_nthread=1."
                     )
                     inj["inj_nthread"] = 1
+
                 elif inj["inj_nthread"] == 1 and inj["response_nthread"] == 1:
                     inj["parallel_inj"] = 0
 
@@ -218,7 +278,7 @@ def parse_config(paramsfile: str, resume: bool):
     ## set sph flag to false if both inj and model basis are pixel
     if params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
         params["sph_flag"] = True
-        params["lmax"] = int(config.get("params", "lmax"))
+        params["lmax"] = int(config_params["lmax"])
 
     ## some final flag, injection parameter setting if we aren't loading the Injection directly
     if inj["doInj"] and not inj["loadInj"]:
@@ -244,7 +304,7 @@ def parse_config(paramsfile: str, resume: bool):
 
         if inj["sph_flag"]:
             try:
-                inj["inj_lmax"] = int(config.get("inj", "inj_lmax"))
+                inj["inj_lmax"] = int(config_inj["inj_lmax"])
             except configparser.NoOptionError as err:
                 if params["sph_flag"]:
                     print(
@@ -267,9 +327,7 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## NB -- will have to change this structure to allow pop-based recovery models. But it's a good start.
         if inj["doInj"] and inj["pop_flag"]:
-            inj["popdict"] = eval(
-                str(config.get("inj", "population_params", fallback="None"))
-            )
+            inj["popdict"] = eval(str(config_inj["population_params"]))
             ## make sure every injection population component has a corresponding entry
             inj_pop_component_names = [
                 cmn for cmn in inj_component_names if "population" in cmn
@@ -317,23 +375,21 @@ def parse_config(paramsfile: str, resume: bool):
                     inj["popdict"][key]["delimiter"] == "\t"
 
     # some run parameters
-    params["out_dir"] = str(config.get("run_params", "out_dir"))
+    params["out_dir"] = config_run_params["out_dir"]
 
-    params["doPreProc"] = int(config.get("run_params", "doPreProc", fallback=0))
-    params["input_spectrum"] = str(
-        config.get("run_params", "input_spectrum", fallback="data_spectrum.npz")
-    )
-    params["projection"] = str(config.get("run_params", "projection", fallback="E"))
-    params["FixSeed"] = int(config.get("run_params", "FixSeed", fallback=0))
+    params["doPreProc"] = int(config_run_params["doPreProc"])
+    params["input_spectrum"] = config_run_params["input_spectrum"]
+    params["projection"] = str(config_run_params["projection"])
+    params["FixSeed"] = int(config_run_params["FixSeed"])
     if params["FixSeed"]:
-        params["seed"] = int(config.get("run_params", "seed"))
-    misc["nthread"] = int(config.get("run_params", "Nthreads", fallback=1))
-    misc["N_GPU"] = int(config.get("run_params", "N_GPU", fallback=0))
+        params["seed"] = int(config_run_params["seed"])
+    misc["nthread"] = int(config_run_params["Nthreads"])
+    misc["N_GPU"] = int(config_run_params["N_GPU"])
 
-    params["colormap"] = str(config.get("run_params", "colormap", fallback="magma"))
+    params["colormap"] = config_run_params["colormap"]
 
     ## sampler selection
-    params["sampler"] = str(config.get("run_params", "sampler"))
+    params["sampler"] = config_run_params["sampler"]
 
     ## only numpyro has GPU support
     if misc["N_GPU"] > 0 and params["sampler"] not in ["numpyro", "numpyro_nested"]:
@@ -346,21 +402,17 @@ def parse_config(paramsfile: str, resume: bool):
     ## sampler setup and late-time imports to reduce dependencies
     ## dynesty
     if params["sampler"] == "dynesty":
-        misc["nlive"] = int(config.get("run_params", "nlive", fallback=800))
-        params["sample_method"] = str(
-            config.get("run_params", "sample_method", fallback="rwalk")
-        )
+        misc["nlive"] = int(config_run_params["nlive"])
+        params["sample_method"] = config_run_params["sample_method"]
     ## emcee
     elif params["sampler"] == "emcee":
-        params["Nburn"] = int(config.get("run_params", "Nburn", fallback=1000))
-        params["Nsamples"] = int(config.get("run_params", "Nsamples", fallback=1000))
+        params["Nburn"] = int(config_run_params["Nburn"])
+        params["Nsamples"] = int(config_run_params["Nsamples"])
     ## numpyro
     elif params["sampler"] == "numpyro":
-        params["show_progress"] = int(
-            config.get("run_params", "show_progress", fallback=1)
-        )
-        params["Nburn"] = int(config.get("run_params", "Nburn", fallback=1000))
-        params["Nsamples"] = int(config.get("run_params", "Nsamples", fallback=1000))
+        params["show_progress"] = int(config_run_params["show_progress"])
+        params["Nburn"] = int(config_run_params["Nburn"])
+        params["Nsamples"] = int(config_run_params["Nsamples"])
 
     # TODO either remove this branch entirely or uncomment it.
     # NOTE numpyro_nested_engine has been commented out of blip.src.numpyro_engine
@@ -381,24 +433,20 @@ def parse_config(paramsfile: str, resume: bool):
         )
     # checkpointing (dynesty+numpyro only for now)
     if params["sampler"] == "dynesty" or params["sampler"] == "numpyro":
-        params["checkpoint"] = int(config.get("run_params", "checkpoint", fallback=0))
+        params["checkpoint"] = int(config_run_params["checkpoint"])
         ## numpyro's checkpoint_interval is in number of samples, vs. seconds for dynesty
         if params["sampler"] == "numpyro":
-            params["checkpoint_at"] = str(
-                config.get("run_params", "checkpoint_at", fallback="end")
-            )
+            params["checkpoint_at"] = config_run_params["checkpoint_at"]
             if params["checkpoint_at"] == "interval":
                 params["checkpoint_interval"] = int(
-                    config.get("run_params", "checkpoint_interval", fallback=100)
+                    config_run_params.get("checkpoint_interval", fallback=100)
                 )
-            params["additional_samples"] = int(
-                config.get("run_params", "additional_samples", fallback=0)
-            )
+            params["additional_samples"] = int(config_run_params["additional_samples"])
             if params["additional_samples"] == 0:
                 params["additional_samples"] = None
         else:
             params["checkpoint_interval"] = int(
-                config.get("run_params", "checkpoint_interval", fallback=3600)
+                config_run_params.get("checkpoint_interval", fallback=3600)
             )
 
     # Fix random seed
