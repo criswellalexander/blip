@@ -656,8 +656,8 @@ def blip(paramsfile='params.ini',resume=False):
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
 
     elif params['sampler'] == 'numpyro':
-        if misc["nthread"] > 1:
-            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(misc["nthread"])
+        if nthread > 1:
+            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
         from blip.src.numpyro_engine import numpyro_engine
 
         ## create engine

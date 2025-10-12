@@ -134,7 +134,8 @@ SECTION_INJ = [
     Option(
         "truevals",
         desc="""
-            Trueval dictionary. If doing an sph injection, blms should be given as complex quantities in a comma seperated list in healpix order
+            Dictionary of injection 'ground truth'. If doing an sph injection, blms should be given as
+            complex quantities in a comma seperated list in healpix order
             b00 can only be 1. b_{l, -m} = (-1)**m b_lm
             blms = b00, b10, b11 for blmax = 1, alamx = 2 
             blms = b00, b10, b20, b11, b21, b22 for blmax = 2, almax = 4
@@ -301,15 +302,26 @@ ALL_LOWER_INJ = [opt.name.lower() for opt in SECTION_INJ]
 ALL_LOWER_RUN_PARAMS = [opt.name.lower() for opt in SECTION_RUN_PARAMS]
 
 
-# FIXME the `resume` parameter should not be here since it's irrelevant to
-# parsing the config
 def parse_config(paramsfile: str, resume: bool):
-    "Parse a configuration file. Returns (params, inj, misc)."
+    """Parse a configuration file `paramsfile`.
+
+    Args:
+        `paramsfile`: the config filename.
+        `resume`: a command-line flag to run_blip. It affects whether the
+            configuration file is valid because it only makes sense to
+            resume checkpointed runs if they have fixed seeds.
+
+    Returns:
+        a tuple of dictionaries `(params, inj, misc)` containing a
+        *valid* configuration where all parameters have been converted from
+        `str` to the appropriate types.
+
+    For invalid input configurations: raises `TypeError`, `ValueError`, `KeyError`,
+    or `configparse.NoOptionError`.
+    """
 
     # These are the returned dictionaries, containing a *valid* configuration
     # with options that already have the right types.
-    # TODO clearly specify what counts as valid here. A good start would be
-    # to use TypedDicts.
     params = {}  # basically combines `params` and `run_params` sections
     inj = {}  # basically receives options from the `inj` section
     misc = {}  # receives a few run parameters and the generated seed
