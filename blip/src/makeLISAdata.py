@@ -22,7 +22,7 @@ class LISAdata():
         self.params = params
         self.inj = inj
         self.armlength = 2.5e9 ## armlength in meters
-        
+
         ## numpy/jax.numpy switch
         global xp
         backend = jax.default_backend()
@@ -41,7 +41,7 @@ class LISAdata():
 
         # the injection must exist before add_sgwb_data() is called.
         self.injection: Injection | None = None
-            
+
     ## Method for reading frequency domain spectral data if given in an npz file
     def read_spectrum(self):
 
@@ -67,7 +67,7 @@ class LISAdata():
             return r1, r2, r3, fdata
 
     def add_sgwb_data(self, injmodel, key, tbreak = 0.0):
-        
+
         '''
         Function to simulate the SGWB time series, given a spectrum.
         
@@ -80,17 +80,17 @@ class LISAdata():
 
         assert self.injection is not None
         assert isinstance(self.injection, Injection)
- 
+
         N = self.injection.Npersplice
         halfN = int(0.5*N)
-        
+
         ## compute the astrophysical spectrum
         injmodel_args = [injmodel.truevals[parameter] for parameter in injmodel.spectral_parameters]
-        
+
         Sgw = injmodel.compute_Sgw(self.injection.frange,injmodel_args)
-        
+
         injmodel.frozen_spectra = Sgw
-        
+
         ## the spectrum of the frequecy domain gaussian for ifft
         norms = xp.sqrt(self.params['fs']*Sgw*N)/2
 
@@ -99,13 +99,13 @@ class LISAdata():
 
         ## the window for splicing
         splice_win = xp.sin(xp.pi * t_arr/N)
-            
+
         ## create rng, etc.
         if self.gpu:
             jax_key = jax.random.key(key)
         else:
             numpy_rng = np.random.default_rng(key)
-        
+
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
         for ii in tqdm(range(self.injection.nsplice)):
@@ -132,7 +132,6 @@ class LISAdata():
             htilda2  = xp.concatenate([ zero_arr, z_scale[:, 1]])
             htilda3  = xp.concatenate([ zero_arr, z_scale[:, 2]])
 
-
             if ii == 0:
                 # Take inverse fft to get time series data
                 h1 = splice_win * xp.fft.irfft(htilda1, N)
@@ -156,7 +155,6 @@ class LISAdata():
                     h2[-N:] = h2[-N:] + splice_win * xp.fft.irfft(htilda2, N)
                     h3[-N:] = h3[-N:] + splice_win * xp.fft.irfft(htilda3, N)
 
-
         ## remove the first half and the last half splice.
         h1, h2, h3 = h1[halfN:-halfN], h2[halfN:-halfN], h3[halfN:-halfN]
 
@@ -165,10 +163,10 @@ class LISAdata():
         return h1, h2, h3, tarr
 
     def process_external_data(self):
-        '''
+        """
         Read external data from params.datafile assuming it is in the
         file format specified by params.datafileformat.
-        '''
+        """
 
         if self.params["datafileformat"] == "mldc":
             self._process_mldc_data()
@@ -178,27 +176,88 @@ class LISAdata():
             assert False, "Unreachable"
 
     def _process_ldc_data(self):
+        # NOTE this needs to behave similarly to LISA.makedata() wrt to side effects.
+        # This method defines the attributes h1,h2,h3, r1,r2,r3, timearray, fdata,
+        # tsegstart, and tsegmid. It relies on self.tser2fser() to avoid duplicating
+        # some of the logic, but it still needs to be manually kept in sync with
+        # makedata().
+
+        # TODO convert between michelson, xyz and aet
+        assert self.params["tdi_lev"] == "aet", "cannot convert between TDIs for now"
+
         filepath = os.path.abspath(self.params["datafile"])
         assert os.path.isfile(filepath), f"Not a file: {filepath}"
         tdi, attrs = _ldc_load_array(filepath, name=self.params["ldc_dataset"])
 
+        # put TDI in nice shape, make sure the numbers make sense
+        tdi, dt, N = self._validate_ldc_data(tdi, attrs)
+
+        # make sure we're in time domain
+        if self.params["datadomain"] == "freq":
+            tdi = np.fft.irfft(tdi, axis=1)
+
+        # cut to required length
+        tdi = tdi[:, :N]
+
+        self.timearray = np.arange(N) * dt
+        self.h1, self.h2, self.h3 = tdi[0, :], tdi[1, :], tdi[2, :]
+        self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = (
+            self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
+        )
+
+    def _validate_ldc_data(self, tdi, attrs):
+        assert (
+            len(tdi.shape) == 2
+        ), f"Expected TDI array with rank 2, got: {len(tdi.shape) = }"
+        assert (
+            3 in tdi.shape or 4 in tdi.shape
+        ), f"Expected three TDI channels, got {tdi.shape = }"
+
+        # guess whether to transpose things by looking at the matrix shape
+        if tdi.shape[1] in (3, 4):
+            tdi = tdi.T
+        # ignore time or frequency array (we will use `dt` or `df` attributes instead)
+        if tdi.shape[0] == 4:
+            tdi = tdi[1:, :]
+        assert tdi.shape[0] == 3
+
         if self.params["datadomain"] == "time":
             dt = attrs.get("dt")
-            assert dt is not None, f"The array {self.params['ldc_dataset']} contains no 'dt' attribute. " \
+            assert dt is not None, (
+                f"The array {self.params['ldc_dataset']} contains no 'dt' attribute.\n"
                 "Is it really in time domain? If not, change the parameter `datadomain` to 'freq'."
+            )
+            N = tdi.shape[1]
+            Tobs = N * dt
+            df = 1 / Tobs
+
         elif self.params["datadomain"] == "freq":
             df = attrs.get("df")
-            assert df is not None, f"The array {self.params['ldc_dataset']} contains no 'df' attribute. " \
+            assert df is not None, (
+                f"The array {self.params['ldc_dataset']} contains no 'df' attribute.\n"
                 "Is it really in frequency domain? If not, change the parameter `datadomain` to 'time'."
+            )
+            assert df > 0
+            Tobs = 1 / df
+            N = 2 * (tdi.shape[1] - 1)  # same size assumed by np.fft.irfft
+            dt = Tobs / N
+
         else:
             assert False, "Unreachable"
 
-        raise NotImplementedError("Cannot yet read data in LDC format, but we're close!")
+        if not np.isclose(1 / dt, self.params["fs"]):
+            raise ValueError(
+                f"The `fs` option was set to {self.params['fs']}, incompatible with input data where fs={1/dt}"
+            )
 
-        # TODO perform the steps in _process_mldc_data here as well.
-        # in particular, save self.r1, r2, r3, fdata, tsegstart, tsegmid.
-        # maybe do TDI combinations (xyz -> aet etc).
-        # note that tser2fser() saves a file to disk. might also want to do that.
+        # find required size
+        Nreq = int(self.params["dur"] / dt)
+        if Nreq > N:
+            raise ValueError(
+                "Requested duration {self.params['dur']} s, but the input data only has {Tobs} s"
+            )
+
+        return tdi, dt, Nreq
 
     def _process_mldc_data(self):
         h1, h2, h3, self.timearray = self._read_mldc_data()
@@ -280,19 +339,16 @@ class LISAdata():
 
         fftfreqs = xp.fft.rfftfreq(Nperseg, 1.0/self.params['fs'])
 
-
         # Map of spectrum
         r1 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
         r2 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
         r3 = xp.zeros((fftfreqs.size, nsegs), dtype='complex')
 
-
         # Hann Window
         hwin = xp.hanning(Nperseg)
         win_fact = xp.mean(hwin**2)
 
-
-#        zpad = np.zeros(Nperseg)
+        #        zpad = np.zeros(Nperseg)
 
         ## Initiate time segment arrays
         tsegstart = xp.zeros(nsegs)
@@ -306,7 +362,7 @@ class LISAdata():
             idxmid = idxmin + int(Nperseg/2)
             if hwin.size != h1[idxmin:idxmax].size:
                 import pdb; pdb.set_trace()
-            
+
             if self.gpu:
                 r1 = r1.at[:, ii].set(xp.fft.rfft(hwin*h1[idxmin:idxmax], axis=0))
                 r2 = r2.at[:, ii].set(xp.fft.rfft(hwin*h2[idxmin:idxmax], axis=0))
@@ -328,14 +384,12 @@ class LISAdata():
         # Output arrays
         fdata = fftfreqs[idx]
 
-
         # Get desired frequencies only
         # We want to normalize ffts so thier square give the psd
         # win_fact is to adjust for hann windowing, sqrt(2) for single sided
         r1 = xp.sqrt(2/win_fact)*r1[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
         r2 = xp.sqrt(2/win_fact)*r2[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
         r3 = xp.sqrt(2/win_fact)*r3[idx, :]/(self.params['fs']*xp.sqrt(self.params['seglen']))
-
 
         np.savez(self.params['out_dir'] + '/' +self.params['input_spectrum'], r1=r1, r2=r2, r3=r3, fdata=fdata)
 
@@ -366,7 +420,6 @@ class LISAdata():
         times, h1, h2, h3 = hoft[0:end_idx, 0], hoft[0:end_idx, 1], hoft[0:end_idx, 2], hoft[0:end_idx, 3]
 
         delt = times[1] - times[0]
-
 
         ## Check if the requested sampel rate is consistant
         if self.params['fs'] != 1.0/delt:
@@ -442,4 +495,3 @@ def _ldc_load_array(filename, name="", full_output=True, sl=None):
         if full_output:
             return arr, attr
         return arr
-
