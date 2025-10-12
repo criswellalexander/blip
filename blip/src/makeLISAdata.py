@@ -1,16 +1,18 @@
+import os
+
 import numpy as np
 import jax
 import jax.numpy as jnp
-import os
-from tqdm import tqdm
 from jax import config as jaxconfig
+
+import h5py
+from tqdm import tqdm
 
 from blip.src.models import Injection
 
 jaxconfig.update("jax_enable_x64", True)
 
 class LISAdata():
-
     '''
     Class for lisa data. Includes methods for generation of gaussian instrumental noise, and generation
     of isotropic stochastic background. Signal models should be added as methods here.
@@ -164,12 +166,41 @@ class LISAdata():
 
     def process_external_data(self):
         '''
-        Just a wrapper function to use the methods the LISAdata class to
-        read data. Return frequency domain data. Since this was used
-        primarily for the MLDC, this assumes that the data is doppler
-        tracking and converts to strain data.
+        Read external data from params.datafile assuming it is in the
+        file format specified by params.datafileformat.
         '''
 
+        if self.params["datafileformat"] == "mldc":
+            self._process_mldc_data()
+        elif self.params["datafileformat"] == "ldc":
+            self._process_ldc_data()
+        else:
+            assert False, "Unreachable"
+
+    def _process_ldc_data(self):
+        filepath = os.path.abspath(self.params["datafile"])
+        assert os.path.isfile(filepath), f"Not a file: {filepath}"
+        tdi, attrs = _ldc_load_array(filepath, name=self.params["ldc_dataset"])
+
+        if self.params["datadomain"] == "time":
+            dt = attrs.get("dt")
+            assert dt is not None, f"The array {self.params['ldc_dataset']} contains no 'dt' attribute. " \
+                "Is it really in time domain? If not, change the parameter `datadomain` to 'freq'."
+        elif self.params["datadomain"] == "freq":
+            df = attrs.get("df")
+            assert df is not None, f"The array {self.params['ldc_dataset']} contains no 'df' attribute. " \
+                "Is it really in frequency domain? If not, change the parameter `datadomain` to 'time'."
+        else:
+            assert False, "Unreachable"
+
+        raise NotImplementedError("Cannot yet read data in LDC format, but we're close!")
+
+        # TODO perform the steps in _process_mldc_data here as well.
+        # in particular, save self.r1, r2, r3, fdata, tsegstart, tsegmid.
+        # maybe do TDI combinations (xyz -> aet etc).
+        # note that tser2fser() saves a file to disk. might also want to do that.
+
+    def _process_mldc_data(self):
         h1, h2, h3, self.timearray = self._read_mldc_data()
 
         # Calculate other tdi combinations if necessary.
@@ -188,7 +219,6 @@ class LISAdata():
 
         # Convert doppler data to strain if readfile datatype is doppler.
         if self.params['datatype'] == 'doppler':
-
             # This is needed to convert from doppler data to strain data.
             self.r1, self.r2, self.r3 = self.r1/(4*self.f0.reshape(self.f0.size, 1)), self.r2/(4*self.f0.reshape(self.f0.size, 1)), self.r3/(4*self.f0.reshape(self.f0.size, 1))
 
@@ -343,4 +373,73 @@ class LISAdata():
             self.params['fs'] = 1.0/delt
 
         return h1, h2, h3, times
-    
+
+
+# Functions prefixed with _ldc were imported from the LDC hdf5 I/O module
+
+def _ldc_str_decode(value):
+    """Decode value if string
+
+    >>> str_decode(b'hello')
+    'hello'
+    """
+    if isinstance(value, (bytes)):
+        return value.decode()
+    return value
+
+def _ldc_decode_utype(array):
+    """Replace btype column in numpy array by unicode format.
+
+    >>> decode_utype(np.rec.fromarrays([[b"a", b"b", b"c"], [1, 2, 3]], names=["name", "val"]))
+    rec.array([('a', 1), ('b', 2), ('c', 3)],
+              dtype=[('name', '<U1'), ('val', '<i8')])
+    """
+    sizeof_numpy_unicode_char = np.dtype("S1").itemsize
+
+    if array.dtype.fields:
+        new_dtype = [
+            (
+                (n, dt[0])
+                if dt[0].kind != "S"
+                else (
+                    n,
+                    np.dtype("<U%d" % (dt[0].itemsize // sizeof_numpy_unicode_char)),
+                )
+            )
+            for n, dt in array.dtype.fields.items()
+        ]
+        array = array.astype(new_dtype)
+    return array
+
+def _ldc_load_array(filename, name="", full_output=True, sl=None):
+    """Return array and its attributes from hdf5 file.
+
+    if full_output is True, return array and meta data as dict.
+    Otherwise, return array only.
+
+    one can select a subset of data by giving a slice object as sl
+    argument.
+
+    """
+    with h5py.File(filename, "r") as fid:
+        names = [name] if name else list(fid.keys())
+        attr = {}
+        arrs = []
+        for name in names:
+            dset = fid.get(name)
+            for k, v in dset.attrs.items():
+                attr[k] = _ldc_str_decode(v)
+            if sl is not None:
+                dset = dset[sl]
+            arrs.append(_ldc_decode_utype(np.array(dset)).squeeze())
+        if len(names) > 1:
+            try:  # make a rec array if all arrays share same size
+                arr = np.rec.fromarrays(arrs, names=names)
+            except ValueError:  # make a dict otherwise
+                arr = dict(zip(names, arrs))
+        else:
+            arr = arrs[0]
+        if full_output:
+            return arr, attr
+        return arr
+

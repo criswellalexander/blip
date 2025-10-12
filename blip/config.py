@@ -55,8 +55,25 @@ SECTION_PARAMS = [
     Option("mldc", desc="FIXME: doesn't do anything!", default="0"),
     Option(
         "datafile",
-        desc="Input data file. Only used if `load_data` is true.",
+        desc="""
+            Input data file. Only used if `load_data` is true.
+            The data format is specified by `datafileformat`.""",
         default="None",
+    ),
+    Option(
+        "datafileformat",
+        desc="Format for external input data. Can be 'mldc' or 'ldc'.",
+        default="ldc",
+    ),
+    Option(
+        "datadomain",
+        desc="How to interpret LDC data. Can be 'time' or 'freq'.",
+        default="time",
+    ),
+    Option(
+        "ldc_dataset",
+        desc="HDF5 path to array with TDI series in LDC input.",
+        default="obs/tdi",
     ),
     Option("fref", desc="TODO", default="0.001"),
     Option(
@@ -317,7 +334,7 @@ def parse_config(paramsfile: str, resume: bool):
         `str` to the appropriate types.
 
     For invalid input configurations: raises `TypeError`, `ValueError`, `KeyError`,
-    or `configparse.NoOptionError`.
+    `AssertionError`, or `configparse.NoOptionError`.
     """
 
     # These are the returned dictionaries, containing a *valid* configuration
@@ -391,6 +408,11 @@ def parse_config(paramsfile: str, resume: bool):
     params["load_data"] = config_params.getboolean("load_data")
     params["datatype"] = config_params["datatype"]
     params["datafile"] = config_params["datafile"]
+    params["datafileformat"] = config_params["datafileformat"]
+    assert params["datafileformat"] in ["mldc", "ldc"], "Invalid input file format."
+    params["datadomain"] = config_params["datadomain"]
+    assert params["datadomain"] in ["time", "freq"], "Invalid input data domain."
+    params["ldc_dataset"] = config_params["ldc_dataset"]
     ## default fref is 1mHz
     ## until we update the prior structure, using other reference frequencies may lead to unintended behavior in the prior bounds
     ## in the new prior structure, the default astrophysical prior bounds should scale with fref
