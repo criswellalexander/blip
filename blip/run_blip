@@ -67,7 +67,7 @@ class LISA(LISAdata, Model):
             
             # make sure matching injections/models have matching colors
             if not self.params['load_data']:
-                ensure_color_matching(self.Model,self.Injection)
+                ensure_color_matching(self.Model,self.injection)
         
         ## if doing an injection, we also need the responses evaluated at the data frequencies for plotting/validation
         if not self.params['load_data'] and not self.inj['loadInj']:
@@ -90,7 +90,7 @@ class LISA(LISAdata, Model):
         print("Loading extant BLIP-generated data from {}".format(self.inj['injdir']))
         
         with open(self.inj['injdir'] + '/injection.pickle', 'rb') as injectionfile:
-            self.Injection = pickle.load(injectionfile)
+            self.injection = pickle.load(injectionfile)
         
         loaded_data = np.load(self.inj['injdir']+'/simulated_data.npz')
         
@@ -127,14 +127,14 @@ class LISA(LISAdata, Model):
         
         ## Build the Injection object
         print("Constructing injection...")
-        self.Injection = Injection(self.params,self.inj,frange,f0,tsegmid)
+        self.injection = Injection(self.params,self.inj,frange,f0,tsegmid)
         
         ## assign a couple additional universal injection attributes needed in add_sgwb_data()
-        self.Injection.Npersplice = Npersplice
-        self.Injection.nsplice = nsplice
+        self.injection.Npersplice = Npersplice
+        self.injection.nsplice = nsplice
         
         # Generate TDI noise
-        times, self.h1, self.h2, self.h3 = self.Injection.components['noise'].gen_noise_spectrum()
+        times, self.h1, self.h2, self.h3 = self.injection.components['noise'].gen_noise_spectrum()
         delt = times[1] - times[0]
 
         # Cut to required size
@@ -150,10 +150,10 @@ class LISA(LISAdata, Model):
         else:
             rng_seed = np.random.randint(int(1e9),dtype='int32')
         rng = np.random.default_rng(rng_seed)
-        keys = rng.integers(int(1e9),size=len(self.Injection.sgwb_component_names),dtype='int32')
+        keys = rng.integers(int(1e9),size=len(self.injection.sgwb_component_names),dtype='int32')
         
-        for component, key in zip(self.Injection.sgwb_component_names,keys):
-            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key)
+        for component, key in zip(self.injection.sgwb_component_names,keys):
+            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.injection.components[component],key)
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
 
             # Add gravitational-wave time series to noise time-series
@@ -211,7 +211,7 @@ class LISA(LISAdata, Model):
         # define f0 = f/2f*
         f0_data = self.fdata/(2*fstar)
         fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.Injection.components[cmn] for cmn in self.Injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
+        fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.injection.components[cmn] for cmn in self.injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
         ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
         del fast_rx
         return
@@ -222,9 +222,9 @@ class LISA(LISAdata, Model):
         
         This is needed to allow us to accurately plot and compare injected spectra vs. simulated data vs. recovered models.
         '''
-        for cmn in self.Injection.component_names:
+        for cmn in self.injection.component_names:
             
-            cm = self.Injection.components[cmn]
+            cm = self.injection.components[cmn]
             
             #Charactersitic frequency
             fstar = 3e8/(2*np.pi*self.armlength)
@@ -271,15 +271,15 @@ class LISA(LISAdata, Model):
         data_PSD1,data_PSD2, data_PSD3 = data_PSD1[idx], data_PSD2[idx], data_PSD3[idx]
         
         ## Get the noise component
-        cmn_noise = self.Injection.components['noise']
+        cmn_noise = self.injection.components['noise']
         C_noise = cmn_noise.fdata_noise
 
         # Extract noise auto-power
         S1, S2, S3 = C_noise[0, 0, :], C_noise[1, 1, :], C_noise[2, 2, :]
 
         ## compute and save the time-averaged response-convolved spectrum for plotting, etc.
-        for cmn in self.Injection.sgwb_component_names:
-            cm = self.Injection.components[cmn]
+        for cmn in self.injection.sgwb_component_names:
+            cm = self.injection.components[cmn]
             if hasattr(cm,"ispop") and cm.ispop:
                 Sgw_convolved = cm.fdata_convolved_spectra ## the population spectra needs to be binned at the observed (data) frequencies in any case
             else:
@@ -357,8 +357,8 @@ class LISA(LISAdata, Model):
         ywmeds = []
         ydevs = []
         ylim_flag = False
-        for component_name in self.Injection.sgwb_component_names:
-            S1_gw = self.Injection.plot_injected_spectra(component_name,fs_new='data',convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.Injection.components[component_name].color)
+        for component_name in self.injection.sgwb_component_names:
+            S1_gw = self.injection.plot_injected_spectra(component_name,fs_new='data',convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.injection.components[component_name].color)
             S1_gw_filt = S1_gw[ffilt]
             plot_data['injspec_data'][component_name] = {'S1_gw':S1_gw_filt}
             plot_data['injspec_data'][component_name]['f_filt'] = self.fdata[ffilt]
@@ -371,7 +371,7 @@ class LISA(LISAdata, Model):
             ywmeds.append(weighted_ymed)
             ydevs.append(np.std(log_S1_gw))
             ylim_flag = True
-            S2_gw, S3_gw = self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels='22'), self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels='33')
+            S2_gw, S3_gw = self.injection.compute_convolved_spectra(component_name,fs_new='data',channels='22'), self.injection.compute_convolved_spectra(component_name,fs_new='data',channels='33')
             S1, S2, S3 = S1+S1_gw, S2+S2_gw, S3+S3_gw
         
         plt.loglog(self.fdata[ffilt], S1[ffilt], label='Simulated Total spectrum', lw=0.75,color='cadetblue')
@@ -382,7 +382,7 @@ class LISA(LISAdata, Model):
             ylow_min = np.min(ylows)
             plt.ylim(bottom=10**(ylow_min-1))
             ## save for plotting the results with plotmaker
-            self.Injection.plot_ymin = 10**(ylow_min-1)
+            self.injection.plot_ymin = 10**(ylow_min-1)
 
         plt.legend(loc='upper right')
         plt.xlabel('$f$ in Hz')
@@ -436,9 +436,9 @@ class LISA(LISAdata, Model):
         
         ymins = []
         iymins = []
-        for component_name in self.Injection.sgwb_component_names:
+        for component_name in self.injection.sgwb_component_names:
             if component_name != 'noise':
-                Sx_gw = self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ) + self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ,imaginary=True)
+                Sx_gw = self.injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ) + self.injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ,imaginary=True)
                 ymins.append(np.real(Sx_gw).min())
                 iymins.append(np.imag(Sx_gw).min())
                 Sx = Sx + Sx_gw
@@ -549,19 +549,19 @@ def blip(paramsfile='params.ini',resume=False):
         ## saving & discarding now, as opposed to at the end of the run also saves space in the checkpoint files.
         if not params['load_data']:
             ## save Injection
-            for cmn in lisa.Injection.component_names:
-                if hasattr(lisa.Injection.components[cmn],'response_mat'):
-                    del lisa.Injection.components[cmn].response_mat
-                if hasattr(lisa.Injection.components[cmn],'summ_response_mat'):
-                    del lisa.Injection.components[cmn].summ_response_mat
-                if hasattr(lisa.Injection.components[cmn],'inj_response_mat'):
-                    del lisa.Injection.components[cmn].inj_response_mat
+            for cmn in lisa.injection.component_names:
+                if hasattr(lisa.injection.components[cmn],'response_mat'):
+                    del lisa.injection.components[cmn].response_mat
+                if hasattr(lisa.injection.components[cmn],'summ_response_mat'):
+                    del lisa.injection.components[cmn].summ_response_mat
+                if hasattr(lisa.injection.components[cmn],'inj_response_mat'):
+                    del lisa.injection.components[cmn].inj_response_mat
             with open(params['out_dir'] + '/injection.pickle', 'wb') as outfile:
-                pickle.dump(lisa.Injection, outfile)
+                pickle.dump(lisa.injection, outfile)
             print("Saved Injection to "+params['out_dir']+"/injection.pickle")
             
             ## also save the injected skymaps for later use
-            lisa.Injection.extract_and_save_skymap_data(map_data_path=params['out_dir']+"/plot_data.pickle")
+            lisa.injection.extract_and_save_skymap_data(map_data_path=params['out_dir']+"/plot_data.pickle")
             
             ## save generated data
             np.savez_compressed(params['out_dir']+'/simulated_data.npz',timearray=lisa.timearray,h1=lisa.h1,h2=lisa.h2,h3=lisa.h3)
@@ -798,7 +798,7 @@ def blip(paramsfile='params.ini',resume=False):
     ## reload the Model and Injection if needed
     if not resume:
         plotting_Model = lisa.Model
-        plotting_Injection = lisa.Injection
+        plotting_Injection = lisa.injection
     else:
         ## grab the model and injection
         with open(params['out_dir'] + '/model.pickle', 'rb') as modelfile:

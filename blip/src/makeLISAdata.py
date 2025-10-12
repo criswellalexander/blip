@@ -3,15 +3,17 @@ import jax
 import jax.numpy as jnp
 import os
 from tqdm import tqdm
-from jax import config
-config.update("jax_enable_x64", True)
+from jax import config as jaxconfig
+
+from blip.src.models import Injection
+
+jaxconfig.update("jax_enable_x64", True)
 
 class LISAdata():
 
     '''
     Class for lisa data. Includes methods for generation of gaussian instrumental noise, and generation
-    of isotropic stochastic background. Any eventually signal models should be added as methods here. This
-    has the Antennapatterns class as a super class.
+    of isotropic stochastic background. Signal models should be added as methods here.
     '''
 
     def __init__(self, params, inj):
@@ -34,6 +36,9 @@ class LISAdata():
             print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
+
+        # the injection must exist before add_sgwb_data() is called.
+        self.injection: Injection | None = None
             
     ## Method for reading frequency domain spectral data if given in an npz file
     def read_spectrum(self):
@@ -59,8 +64,6 @@ class LISAdata():
 
             return r1, r2, r3, fdata
 
-
-
     def add_sgwb_data(self, injmodel, key, tbreak = 0.0):
         
         '''
@@ -72,14 +75,17 @@ class LISAdata():
         key (int) : Key for the numpy (or JAX) rng
         
         '''
+
+        assert self.injection is not None
+        assert isinstance(self.injection, Injection)
  
-        N = self.Injection.Npersplice
+        N = self.injection.Npersplice
         halfN = int(0.5*N)
         
         ## compute the astrophysical spectrum
         injmodel_args = [injmodel.truevals[parameter] for parameter in injmodel.spectral_parameters]
         
-        Sgw = injmodel.compute_Sgw(self.Injection.frange,injmodel_args)
+        Sgw = injmodel.compute_Sgw(self.injection.frange,injmodel_args)
         
         injmodel.frozen_spectra = Sgw
         
@@ -100,20 +106,20 @@ class LISAdata():
         
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
-        for ii in tqdm(range(self.Injection.nsplice)):
+        for ii in tqdm(range(self.injection.nsplice)):
             ## move frequency to be the zeroth-axis, then cholesky decomp
             ## this sometimes breaks on GPU for unclear reasons, hence the try/except
             try:
                 L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
             except:
                 L_cholesky = norms[:, None, None] *  xp.array(np.linalg.cholesky(np.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0)))
-            
+
             ## generate standard normal complex data first
             if self.gpu:
                 _, jax_key, jax_key_2 = jax.random.split(jax_key,3) ## needed to actually produce a new set of random numbers every time through the loop!
-                z_norm = jax.random.normal(jax_key,shape=(self.Injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.Injection.frange.size, 3))  
+                z_norm = jax.random.normal(jax_key,shape=(self.injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.injection.frange.size, 3))
             else:
-                z_norm = numpy_rng.normal(size=(self.Injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.Injection.frange.size, 3))
+                z_norm = numpy_rng.normal(size=(self.injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.injection.frange.size, 3))
 
             ## The data in z_norm is rescaled into z_scale using L_cholesky
             z_scale = xp.einsum('ijk, ikl -> ijl', L_cholesky, z_norm[:, :, None])[:, :, 0]
@@ -221,7 +227,6 @@ class LISAdata():
 
         elif self.params['datatype'] == 'strain':
             pass
-
 
     def tser2fser(self, h1, h2, h3, timearray):
 
