@@ -854,7 +854,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     efoldings = self.fixedvals['max_efoldings']
                 else:
                     efoldings = 4
-                efoldings = self.fixed
+                print("Spatial inference max galaxy extent: {} e-foldings.".format(efoldings))
                 self.mask = self.galaxy.max_skymap > (1/np.e**efoldings)*np.max(self.galaxy.max_skymap)
                 self.masked_skymap = self.galaxy.max_skymap * self.mask
                 self.mask_idx = np.flatnonzero(self.mask)
@@ -895,7 +895,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     efoldings = self.fixedvals['max_efoldings']
                 else:
                     efoldings = 4
-                efoldings = self.fixed
+                print("Spatial inference max galaxy extent: {} e-foldings.".format(efoldings))
                 self.mask = self.galaxy.max_skymap > (1/np.e**efoldings)*np.max(self.galaxy.max_skymap)
                 self.masked_skymap = self.galaxy.max_skymap * self.mask
                 self.mask_idx = np.flatnonzero(self.mask)
