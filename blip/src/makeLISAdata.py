@@ -177,7 +177,7 @@ class LISAdata():
 
     def _process_ldc_data(self):
         # NOTE this needs to behave similarly to LISA.makedata() wrt side effects.
-        # This method defines the attributes h1,h2,h3, r1,r2,r3, timearray, fdata,
+        # This method defines the attributes h1,h2,h3, r1,r2,r3, f0, timearray, fdata,
         # tsegstart, and tsegmid. It relies on self.tser2fser() to avoid duplicating
         # some of the logic, but it still needs to be manually kept in sync with
         # makedata().
@@ -204,6 +204,12 @@ class LISAdata():
         self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = (
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
         )
+
+        # Charactersitic frequency. Define f0
+        cspeed = 3e8
+        fstar = cspeed/(2*np.pi*self.armlength)
+        self.f0 = self.fdata/(2*fstar)
+
 
     def _validate_ldc_data(self, tdi, attrs):
         assert (
