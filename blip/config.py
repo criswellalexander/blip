@@ -723,10 +723,11 @@ def parse_config(paramsfile: str, resume: bool):
             )
         )
 
+    misc["nlive"] = int(config_run_params["nlive"])
+
     ## sampler setup and late-time imports to reduce dependencies
     ## dynesty
     if params["sampler"] == "dynesty":
-        misc["nlive"] = int(config_run_params["nlive"])
         params["sample_method"] = config_run_params["sample_method"]
     ## emcee
     elif params["sampler"] == "emcee":
