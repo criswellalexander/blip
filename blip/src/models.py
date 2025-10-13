@@ -850,7 +850,12 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.compute_skymap = self.galaxy.mw_mapmaker_1par
                 
                 ## mask maps to maximum allowed spatial extent
-                self.mask = self.galaxy.max_skymap > (1/np.e**4)*np.max(self.galaxy.max_skymap)
+                if 'max_efoldings' in self.fixedvals.keys():
+                    efoldings = self.fixedvals['max_efoldings']
+                else:
+                    efoldings = 4
+                efoldings = self.fixed
+                self.mask = self.galaxy.max_skymap > (1/np.e**efoldings)*np.max(self.galaxy.max_skymap)
                 self.masked_skymap = self.galaxy.max_skymap * self.mask
                 self.mask_idx = np.flatnonzero(self.mask)
                 
@@ -886,7 +891,12 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.compute_skymap = self.galaxy.mw_mapmaker_2par
                 
                 ## mask maps to maximum allowed spatial extent
-                self.mask = self.galaxy.max_skymap > (1/np.e**4)*np.max(self.galaxy.max_skymap)
+                if 'max_efoldings' in self.fixedvals.keys():
+                    efoldings = self.fixedvals['max_efoldings']
+                else:
+                    efoldings = 4
+                efoldings = self.fixed
+                self.mask = self.galaxy.max_skymap > (1/np.e**efoldings)*np.max(self.galaxy.max_skymap)
                 self.masked_skymap = self.galaxy.max_skymap * self.mask
                 self.mask_idx = np.flatnonzero(self.mask)
                 
