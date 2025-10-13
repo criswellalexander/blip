@@ -600,6 +600,7 @@ def parse_config(paramsfile: str, resume: bool):
     ## pop out to set sph flags
     params["sph_flag"] = "sph" in sph_check  # or ('hierarchical' in sph_check)
     ## set sph flag to false if both inj and model basis are pixel
+    # FIXME what is the correct logic here when no injection is used?
     if params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
         params["sph_flag"] = True
         params["lmax"] = int(config_params["lmax"])
