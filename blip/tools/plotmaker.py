@@ -615,7 +615,7 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             ylow_min = np.min(ylows)
             ## check to see if the diag_spectra() ylim was higher
             ## and use that ylim if so (helps with wonky lower limits)
-            if (Injection.plot_ymin is not None) and (Injection.plot_ymin > 10**(ylow_min - 1)):
+            if Injection and (Injection.plot_ymin is not None) and (Injection.plot_ymin > 10**(ylow_min - 1)):
                 ylim_final = Injection.plot_ymin
             else:
                 ylim_final = 10**(ylow_min)
