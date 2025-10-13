@@ -176,7 +176,7 @@ class LISAdata():
             assert False, "Unreachable"
 
     def _process_ldc_data(self):
-        # NOTE this needs to behave similarly to LISA.makedata() wrt to side effects.
+        # NOTE this needs to behave similarly to LISA.makedata() wrt side effects.
         # This method defines the attributes h1,h2,h3, r1,r2,r3, timearray, fdata,
         # tsegstart, and tsegmid. It relies on self.tser2fser() to avoid duplicating
         # some of the logic, but it still needs to be manually kept in sync with
@@ -254,7 +254,7 @@ class LISAdata():
         Nreq = int(self.params["dur"] / dt)
         if Nreq > N:
             raise ValueError(
-                "Requested duration {self.params['dur']} s, but the input data only has {Tobs} s"
+                f"Requested duration {self.params['dur']} s, but the input data only has {Tobs} s"
             )
 
         return tdi, dt, Nreq

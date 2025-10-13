@@ -6,6 +6,7 @@ import configparser
 import numpy as np
 import pickle
 
+# TODO move the validation of model specifiers from submodel.__init__() to here.
 
 @dataclass
 class Option:
