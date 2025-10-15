@@ -2616,7 +2616,7 @@ class Injection():#geometry,sph_geometry):
         else:
             rx_nthreads = 1
         t1 = time.time()
-        fast_rx = fast_geometry(self.params,nthreads=rx_nthreads)
+        fast_rx = fast_geometry(self.params,nthreads=rx_nthreads, use_gpu=self.inj['gpu_inj'])
         fast_rx.calculate_response_functions(self.f0,self.tsegmid,[self.components[cmn] for cmn in self.sgwb_component_names],self.params['tdi_lev'])
         t2 = time.time()
         print("Time elapsed for calculating the LISA response functions for all components via joint computation is {} s.".format(t2-t1))

@@ -632,6 +632,8 @@ def blip(paramsfile='params.ini',resume=False):
             ## injection per-component multithreading
             inj['parallel_inj'] = int(config.get("inj", "parallel_inj", fallback=0))
             
+            # LSS controls whether GPU will be used to accelerate injections.
+            inj['gpu_inj'] = int(config.get("inj", "gpu_inj", fallback=0))
             ## if parallel_inj is True but there is only one component, set parallel_inj to False
 #            if len(inj_component_names) == 1 and inj['parallel_inj']:
 #                inj['parallel_inj'] = 0

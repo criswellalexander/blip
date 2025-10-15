@@ -32,7 +32,7 @@ class fast_geometry(sph_geometry):
     
     '''
 
-    def __init__(self,params,nthreads=1):
+    def __init__(self,params,nthreads=1, use_gpu=False):
         
         self.params = params
         self.nthreads = nthreads
@@ -55,17 +55,22 @@ class fast_geometry(sph_geometry):
         
         ## numpy/jax.numpy switch
         global xp
-        backend = jax.default_backend()
-        if backend == 'gpu':
-            print("GPU detected; performing response function calculations on GPU...")
-            self.gpu = True
-            xp = jnp
-        elif backend == 'cpu':
-            print("No GPU detected; performing response function calculations on CPU...")
-            self.gpu = False
-            xp = np
+        # LSS check if GPU injection flag is True
+        if use_gpu:
+            backend = jax.default_backend()
+            if backend == 'gpu':
+                print("GPU detected; performing response function calculations on GPU...")
+                self.gpu = True
+                xp = jnp
+            elif backend == 'cpu':
+                print("No GPU detected; performing response function calculations on CPU...")
+                self.gpu = False
+                xp = np
+            else:
+                print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
+                self.gpu = False
+                xp = np
         else:
-            print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
         
