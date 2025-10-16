@@ -299,12 +299,13 @@ class Population():
             plt.savefig(saveto + '/population_injection_zoom.png', dpi=150)
             plt.close()
         
+        ## factor of 4/5 is average over inclination, assuming isotropically polarized binaries
         if return_median:
-            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
-            median_spectrum = runmed_binned/bin_widths *u.Hz*u.s
+            spectrum =  (4/5)*fg_PSD_binned/bin_widths *u.Hz*u.s
+            median_spectrum = (4/5)*runmed_binned/bin_widths *u.Hz*u.s
             return spectrum, median_spectrum
         else:
-            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
+            spectrum =  (4/5)*fg_PSD_binned/bin_widths *u.Hz*u.s
             return spectrum
      
     @staticmethod
