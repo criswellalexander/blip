@@ -104,7 +104,7 @@ class LISA(LISAdata, Model):
         '''
 
         ## define the splice segment duration
-        tsplice = 1e4
+        tsplice = self.params['tsplice']
         ## the segments to be splices are half-overlapping
         nsplice = 2*int(self.params['dur']/tsplice) + 1
         ## arrays of segmnent start and mid times
@@ -533,6 +533,7 @@ def blip(paramsfile='params.ini',resume=False):
     params['fmax']     = float(config.get("params", "fmax"))
     params['dur']      = float(config.get("params", "duration"))
     params['seglen']   = float(config.get("params", "seglen", fallback=1e5))
+    params['tsplice']  = float(config.get("params", "tsplice", fallback=1e4))
     params['fs']       = float(config.get("params", "fs", fallback=0.25))
     params['Shfile']   = config.get("params", "Shfile", fallback='LISA_2017_PSD_M.npy')
     params['load_data'] = int(config.get("params", "load_data", fallback=0))
