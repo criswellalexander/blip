@@ -1,7 +1,6 @@
 import os
 from blip.config import parse_config
 
-os.path.pardir
 blip_root_dir = os.path.dirname(os.path.dirname(__file__))
 
 def test_default_params():
