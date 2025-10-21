@@ -177,6 +177,8 @@ class LISAdata():
         h1, h2, h3 = h1[halfN:-halfN], h2[halfN:-halfN], h3[halfN:-halfN]
 
         tarr = self.params['tstart'] + tbreak +  xp.arange(0, self.params['dur'], 1.0/self.params['fs'])
+        tarr = tarr[0:len(h1)]
+        assert len(tarr) == len(h1)
 
         return h1, h2, h3, tarr
 
