@@ -12,6 +12,44 @@ from blip.src.models import Injection
 
 jaxconfig.update("jax_enable_x64", True)
 
+def sgwb_splice_parameters(dur, tstart, fs):
+    """
+    Compute (tsplice, nsplice, tsegmid, Npersplice),
+    parameters used for building SGWB injections.
+    """
+    ## define the splice segment duration
+    tsplice = 1e4
+    ## the segments to be splices are half-overlapping
+    nsplice = 2 * int(dur / tsplice) + 1
+    ## arrays of segmnent start and mid times
+    tsegmid = tstart + (tsplice / 2.0) * np.arange(nsplice) + (tsplice / 2.0)
+    ## Number of time-domain points in a splice segment
+    Npersplice = int(fs * tsplice)
+
+    return tsplice, nsplice, tsegmid, Npersplice
+
+
+def sgwb_inj_length(dur, tstart, fs):
+    """
+    Compute the length of a SGWB injection.
+    """
+    _, nsplice, _, Npersplice = sgwb_splice_parameters(dur, tstart, fs)
+    halfNpersplice = int(0.5 * Npersplice)
+    return Npersplice + (nsplice - 3) * halfNpersplice
+
+
+def time_frequency_parameters(dur, seglen, fs):
+    "Return (nsegs, Nperseg) parameters used in tser2fser()."
+    nsegs = int(np.floor(dur / seglen)) - 1
+    Nperseg = int(fs * seglen)
+    return nsegs, Nperseg
+
+def time_frequency_length(dur, seglen, fs):
+    "Return length of data for alignment with segments in tser2fser()."
+    nsegs, Nperseg = time_frequency_parameters(dur, seglen, fs)
+    return nsegs * Nperseg
+
+
 def xyz2aet(X, Y, Z, /):
     A, E, T = (
         (Z - X) / np.sqrt(2.0),
@@ -177,8 +215,6 @@ class LISAdata():
         h1, h2, h3 = h1[halfN:-halfN], h2[halfN:-halfN], h3[halfN:-halfN]
 
         tarr = self.params['tstart'] + tbreak +  xp.arange(0, self.params['dur'], 1.0/self.params['fs'])
-        tarr = tarr[0:len(h1)]
-        assert len(tarr) == len(h1)
 
         return h1, h2, h3, tarr
 
@@ -349,10 +385,9 @@ class LISAdata():
         '''
 
         print ("Calculating fourier spectra... ")
-        # Number of segmants
-        nsegs = int(np.floor(self.params['dur']/self.params['seglen'])) -1
-
-        Nperseg=int(self.params['fs']*self.params['seglen'])
+        
+        # precomputed during configuration parsing
+        nsegs, Nperseg = self.params["nsegs"], self.params["Nperseg"]
 
         '''
         # Apply a cascading low pass filter

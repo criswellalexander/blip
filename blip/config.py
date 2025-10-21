@@ -8,6 +8,14 @@ import pickle
 
 # TODO move the validation of model specifiers from submodel.__init__() to here.
 
+from blip.src.makeLISAdata import (
+    sgwb_splice_parameters,
+    time_frequency_parameters,
+    sgwb_inj_length,
+    time_frequency_length,
+)
+
+
 @dataclass
 class Option:
     "Configuration option."
@@ -404,7 +412,11 @@ def parse_config(paramsfile: str, resume: bool):
     params["fmax"] = float(config_params["fmax"])
     params["dur"] = float(config_params["duration"])
     params["seglen"] = float(config_params["seglen"])
+    assert (
+        params["seglen"] >= 10 / params["fmin"]
+    ), "Segment length incompatible with fmin"
     params["fs"] = float(config_params["fs"])
+    assert params["fs"] >= 4 * params["fmax"], "Sampling rate fs incompatible with fmax"
     params["Shfile"] = config_params["Shfile"]
     params["load_data"] = config_params.getboolean("load_data")
     params["datatype"] = config_params["datatype"]
@@ -429,6 +441,24 @@ def parse_config(paramsfile: str, resume: bool):
         )
 
     params["model"] = str(config_params["model"])
+
+    ## precompute time-frequency alignment
+    params["nsegs"], params["Nperseg"] = time_frequency_parameters(
+        params["dur"], params["seglen"], params["fs"]
+    )
+
+    ## make sure alignment is possible for `tser2fser()`
+    N_from_duration = int((params["dur"]) * params["fs"])
+    N_from_time_frequency = time_frequency_length(
+        params["dur"], params["seglen"], params["fs"]
+    )
+    assert (
+        N_from_duration % params["Nperseg"] == 0
+    ), f"""Data duration misaligned with segment length
+        {N_from_duration = }, {N_from_time_frequency = }
+        duration = {params['dur']}, nsegs = {params['nsegs']}
+        seglen = {params['seglen']}, Nperseg = {params['Nperseg']}
+        {N_from_duration % params['Nperseg'] = }"""
 
     ## get the model fixed values, passed as a dict
     fixedvals = eval(str(config_params["fixedvals"]))
@@ -526,6 +556,24 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
+            ## precompute SGWB injection alignment info
+            (
+                params["tsplice"],
+                params["nsplice"],
+                params["tsegmid"],
+                params["Npersplice"],
+            ) = sgwb_splice_parameters(params["dur"], params["tstart"], params["fs"])
+
+            ## make sure alignment is possible for `add_sgwb_data()`
+            N_from_sgwb_splices = sgwb_inj_length(
+                params["dur"], params["tstart"], params["fs"]
+            )
+            assert (
+                N_from_duration == N_from_sgwb_splices
+            ), f"""Data duration misaligned with SGWB injection
+                tsplice = {params['tsplice']}, nsplice = {params['nsplice']},
+                tsegmid = {params['tsegmid']}, Npersplice = {params['Npersplice']}"""
+
             inj["injection"] = config_inj["injection"]
 
             ## get the injection basis

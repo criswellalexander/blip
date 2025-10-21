@@ -111,14 +111,11 @@ class LISA(LISAdata, Model):
         to generate data. Return Frequency domain data.
         '''
 
-        ## define the splice segment duration
-        tsplice = 1e4
-        ## the segments to be splices are half-overlapping
-        nsplice = 2*int(self.params['dur']/tsplice) + 1
-        ## arrays of segmnent start and mid times
-        tsegmid = self.params['tstart'] +  (tsplice/2.0) * np.arange(nsplice) + (tsplice/2.0)
-        ## Number of time-domain points in a splice segment
-        Npersplice = int(self.params['fs']*tsplice)
+        # SGWB generation parameters precomputed during configuration parsing
+        nsplice = self.params["nsplice"]
+        tsegmid = self.params["tsegmid"]
+        Npersplice = self.params["Npersplice"]
+
         ## leave out f = 0
         frange = np.fft.rfftfreq(Npersplice, 1.0/self.params['fs'])[1:]
         ## the charecteristic frequency of LISA, and the scaled frequency array
@@ -155,6 +152,8 @@ class LISA(LISAdata, Model):
         for component, key in zip(self.injection.sgwb_component_names,keys):
             h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.injection.components[component],key)
 
+            assert h1_gw.size == times.size
+            assert h1_gw.size == self.h1.size
             assert np.isclose(delt, times[1]-times[0]), 'The noise and signal arrays are at different sampling frequencies!'
 
             # cut again to required length, because the signal (constructed from splices)
