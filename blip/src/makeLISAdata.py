@@ -250,7 +250,14 @@ class LISAdata():
 
         # make sure we're in time domain
         if self.params["datadomain"] == "freq":
-            tdi = np.fft.irfft(tdi, axis=1)
+            # the 1/dt accounts for the fact that an LDC FrequencySeries represents
+            # a continuous-time Fourier transform, sampled at discrete frequencies.
+            # Not the same as a discrete Fourier transform of a time-domain discrete
+            # signal, which is what the FFT is about.
+            #
+            # So, when dealing with LDC data, every rfft needs to be accompanied by a
+            # "*dt", and every irfft by a "/dt".
+            tdi = np.fft.irfft(tdi, axis=1) / dt
 
         # cut to required length
         tdi = tdi[:, :N]
