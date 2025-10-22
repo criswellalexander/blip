@@ -136,6 +136,8 @@ class LISA(LISAdata, Model):
 
         # Cut to required size
         N = int((self.params['dur'])/delt)
+        self.timearray = np.arange(0, self.params['dur'], delt)
+        self.timearray = self.timearray[0:N]
         self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
 
         ## create time-domain contribution from each injection component that isn't noise
@@ -159,10 +161,7 @@ class LISA(LISAdata, Model):
             # cut again to required length, because the signal (constructed from splices)
             # might be longer or shorter than the noise.
             N = min(N, len(times))
-            if hasattr(self, "timearray"):
-                self.timearray = self.timearray[0:N]
-            else:
-                self.timearray = times[0:N]
+            self.timearray = self.timearray[0:N]
             times = times[0:N]
             self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
