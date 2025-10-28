@@ -272,6 +272,15 @@ class LISAdata():
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
         )
 
+        # Convert doppler data to strain if readfile datatype is doppler.
+        if self.params['datatype'] == 'doppler':
+            # This is needed to convert from doppler data to strain data.
+            self.r1, self.r2, self.r3 = (
+                self.r1 / (4 * self.f0[:, np.newaxis]),
+                self.r2 / (4 * self.f0[:, np.newaxis]),
+                self.r3 / (4 * self.f0[:, np.newaxis]),
+            )
+
         # Charactersitic frequency. Define f0
         cspeed = 3e8
         fstar = cspeed/(2*np.pi*self.armlength)
