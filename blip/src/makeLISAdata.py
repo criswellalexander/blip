@@ -50,24 +50,6 @@ def time_frequency_length(dur, seglen, fs):
     return nsegs * Nperseg
 
 
-def xyz2aet(X, Y, Z, /):
-    A, E, T = (
-        (Z - X) / np.sqrt(2.0),
-        (X - 2.0 * Y + Z) / np.sqrt(6.0),
-        (X + Y + Z) / np.sqrt(3.0),
-    )
-    return A, E, T
-
-
-def aet2xyz(A, E, T, /):
-    X, Y, Z = (
-        -1 / np.sqrt(2.0) * A + 1 / np.sqrt(6.0) * E + 1 / np.sqrt(3.0) * T,
-        -np.sqrt(2.0 / 3.0) * E + 1 / np.sqrt(3.0) * T,
-        1 / np.sqrt(2.0) * A + 1 / np.sqrt(6.0) * E + 1 / np.sqrt(3.0) * T,
-    )
-    return X, Y, Z
-
-
 class LISAdata():
     '''
     Class for lisa data. Includes methods for generation of gaussian instrumental noise, and generation
@@ -239,7 +221,7 @@ class LISAdata():
         # makedata().
 
         # TODO convert between michelson, xyz and aet
-        assert self.params["tdi_lev"] in ["aet", "xyz"], "cannot use `michelson` TDI for now"
+        assert self.params["tdi_lev"] "xyz", "cannot use AET or Michelson variables for now"
 
         filepath = os.path.abspath(self.params["datafile"])
         assert os.path.isfile(filepath), f"Not a file: {filepath}"
@@ -264,9 +246,6 @@ class LISAdata():
 
         self.timearray = np.arange(N) * dt
         self.h1, self.h2, self.h3 = tdi[0, :], tdi[1, :], tdi[2, :]
-        # make sure we're using XYZ
-        if self.params['tdi_lev'] == 'aet':
-            self.h1, self.h2, self.h3 = aet2xyz(self.h1, self.h2, self.h3)
 
         self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = (
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
@@ -401,7 +380,7 @@ class LISAdata():
         '''
 
         print ("Calculating fourier spectra... ")
-        
+
         # precomputed during configuration parsing
         nsegs, Nperseg = self.params["nsegs"], self.params["Nperseg"]
 
