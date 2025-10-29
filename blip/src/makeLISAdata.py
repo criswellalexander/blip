@@ -221,7 +221,7 @@ class LISAdata():
         # makedata().
 
         # TODO convert between michelson, xyz and aet
-        assert self.params["tdi_lev"] "xyz", "cannot use AET or Michelson variables for now"
+        assert self.params["tdi_lev"] == "xyz", "cannot use AET or Michelson variables for now"
 
         filepath = os.path.abspath(self.params["datafile"])
         assert os.path.isfile(filepath), f"Not a file: {filepath}"
@@ -251,6 +251,11 @@ class LISAdata():
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
         )
 
+        # Charactersitic frequency. Define f0
+        cspeed = 3e8
+        fstar = cspeed/(2*np.pi*self.armlength)
+        self.f0 = self.fdata/(2*fstar)
+
         # Convert doppler data to strain if readfile datatype is doppler.
         if self.params['datatype'] == 'doppler':
             # This is needed to convert from doppler data to strain data.
@@ -259,11 +264,6 @@ class LISAdata():
                 self.r2 / (4 * self.f0[:, np.newaxis]),
                 self.r3 / (4 * self.f0[:, np.newaxis]),
             )
-
-        # Charactersitic frequency. Define f0
-        cspeed = 3e8
-        fstar = cspeed/(2*np.pi*self.armlength)
-        self.f0 = self.fdata/(2*fstar)
 
 
     def _validate_ldc_data(self, tdi, attrs):
