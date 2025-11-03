@@ -337,7 +337,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             if not injection:
                 self.spectral_prior = self.robson19foreground_prior
                 if 'T_obs' not in self.fixedvals.keys():
-                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['dur']/3.154e7)
                     self.fixedvals |= shape_fixedvals
                 else:
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
@@ -364,7 +364,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             if not injection:
                 self.spectral_prior = self.robson19foregroundvaried_prior
                 if 'T_obs' not in self.fixedvals.keys():
-                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['duration']/3.154e7)
+                    shape_fixedvals = get_robson19_shape_pars_from_tobs(self.params['dur']/3.154e7)
                     self.fixedvals |= shape_fixedvals
                 else:
                     shape_fixedvals = get_robson19_shape_pars_from_tobs(self.fixedvals['T_obs'])
