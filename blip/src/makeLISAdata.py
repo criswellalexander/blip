@@ -222,6 +222,8 @@ class LISAdata():
 
         # TODO convert between michelson, xyz and aet
         assert self.params["tdi_lev"] == "xyz", "cannot use AET or Michelson variables for now"
+        assert self.params["datadomain"] == "freq", "cannot yet deal with time-domain external data"
+        assert self.params["datatype"] == "doppler", "if datatype is not doppler this is probably a mistake"
 
         filepath = os.path.abspath(self.params["datafile"])
         assert os.path.isfile(filepath), f"Not a file: {filepath}"
@@ -230,16 +232,22 @@ class LISAdata():
         # put TDI in nice shape, make sure the numbers make sense
         tdi, dt, N = self._validate_ldc_data(tdi, attrs)
 
-        # make sure we're in time domain
-        if self.params["datadomain"] == "freq":
-            # the 1/dt accounts for the fact that an LDC FrequencySeries represents
-            # a continuous-time Fourier transform, sampled at discrete frequencies.
-            # Not the same as a discrete Fourier transform of a time-domain discrete
-            # signal, which is what the FFT is about.
-            #
-            # So, when dealing with LDC data, every rfft needs to be accompanied by a
-            # "*dt", and every irfft by a "/dt".
-            tdi = np.fft.irfft(tdi, axis=1) / dt
+        # Charactersitic frequency. Define f0
+        cspeed = 3e8
+        fstar = cspeed/(2*np.pi*self.armlength)
+        doppler_to_strain = 2*np.fft.rfftfreq(N, dt)/fstar
+
+        # change to strain data
+        tdi *= doppler_to_strain
+        # change to time domain
+        # the 1/dt accounts for the fact that an LDC FrequencySeries represents
+        # a continuous-time Fourier transform, sampled at discrete frequencies.
+        # Not the same as a discrete Fourier transform of a time-domain discrete
+        # signal, which is what the FFT is about.
+        #
+        # So, when dealing with LDC data, every rfft needs to be accompanied by a
+        # "*dt", and every irfft by a "/dt".
+        tdi = np.fft.irfft(tdi, axis=1) / dt
 
         # cut to required length
         tdi = tdi[:, :N]
@@ -250,21 +258,6 @@ class LISAdata():
         self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = (
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
         )
-
-        # Charactersitic frequency. Define f0
-        cspeed = 3e8
-        fstar = cspeed/(2*np.pi*self.armlength)
-        self.f0 = self.fdata/(2*fstar)
-
-        # Convert doppler data to strain if readfile datatype is doppler.
-        if self.params['datatype'] == 'doppler':
-            # This is needed to convert from doppler data to strain data.
-            self.r1, self.r2, self.r3 = (
-                self.r1 * (4 * self.f0[:, np.newaxis]),
-                self.r2 * (4 * self.f0[:, np.newaxis]),
-                self.r3 * (4 * self.f0[:, np.newaxis]),
-            )
-
 
     def _validate_ldc_data(self, tdi, attrs):
         assert (
