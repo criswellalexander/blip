@@ -260,9 +260,9 @@ class LISAdata():
         if self.params['datatype'] == 'doppler':
             # This is needed to convert from doppler data to strain data.
             self.r1, self.r2, self.r3 = (
-                self.r1 / (4 * self.f0[:, np.newaxis]),
-                self.r2 / (4 * self.f0[:, np.newaxis]),
-                self.r3 / (4 * self.f0[:, np.newaxis]),
+                self.r1 * (4 * self.f0[:, np.newaxis]),
+                self.r2 * (4 * self.f0[:, np.newaxis]),
+                self.r3 * (4 * self.f0[:, np.newaxis]),
             )
 
 
