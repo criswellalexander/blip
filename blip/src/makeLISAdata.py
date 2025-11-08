@@ -232,10 +232,12 @@ class LISAdata():
         # put TDI in nice shape, make sure the numbers make sense
         tdi, dt, N = self._validate_ldc_data(tdi, attrs)
 
-        # Charactersitic frequency. Define f0
+        # Characteristic frequency and doppler-to-strain conversion factor
         cspeed = 3e8
         fstar = cspeed/(2*np.pi*self.armlength)
-        doppler_to_strain = fstar/(2*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt))
+        strain_to_doppler = 2*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt)/fstar
+        doppler_to_strain = np.divide(1, strain_to_doppler, where=(strain_to_doppler!=0))
+        doppler_to_strain[0] = 0.0  # remove uninitialized value
 
         # change to strain data
         tdi *= doppler_to_strain[np.newaxis, :]
