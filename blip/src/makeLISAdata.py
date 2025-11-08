@@ -235,10 +235,10 @@ class LISAdata():
         # Charactersitic frequency. Define f0
         cspeed = 3e8
         fstar = cspeed/(2*np.pi*self.armlength)
-        doppler_to_strain = 2*np.fft.rfftfreq(N, dt)/fstar
+        doppler_to_strain = fstar/(2*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt))
 
         # change to strain data
-        tdi *= doppler_to_strain
+        tdi *= doppler_to_strain[np.newaxis, :]
         # change to time domain
         # the 1/dt accounts for the fact that an LDC FrequencySeries represents
         # a continuous-time Fourier transform, sampled at discrete frequencies.
@@ -258,6 +258,8 @@ class LISAdata():
         self.r1, self.r2, self.r3, self.fdata, self.tsegstart, self.tsegmid = (
             self.tser2fser(self.h1, self.h2, self.h3, self.timearray)
         )
+
+        self.f0 = self.fdata/(2*fstar)
 
     def _validate_ldc_data(self, tdi, attrs):
         assert (
