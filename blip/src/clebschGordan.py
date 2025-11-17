@@ -9,6 +9,7 @@ class clebschGordan():
     Class with methods for manipulating clebsch-gordon coeffcients.
     '''
 
+    # FIXME uninitialized self.injection, self.inj, self.params
     def __init__(self):
         if self.injection:
             self.blmax = self.inj['inj_lmax']

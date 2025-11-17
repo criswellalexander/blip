@@ -557,7 +557,7 @@ class Galaxy_Model():
         
         return skymap
 
-        
+# FIXME there is no log_DWD_FG_map being returned
 def generate_galactic_foreground(rh,zh,nside):
     '''
     Generate a galactic white dwarf binary foreground modeled after Breivik et al. (2020), consisting of a bulge + disk. The default values are those given in Breivik+20; the model itself traces back to electromagnetic studies of the Galaxy by McMillan et al. (2011), Bissantz and Gerhard (2002), and Binney et al. (1997).

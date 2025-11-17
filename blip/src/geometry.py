@@ -8,14 +8,17 @@ from blip.src.sph_geometry import sph_geometry
 class geometry(sph_geometry):
 
     '''
-    Module containing geometry methods. The methods here include calculation of antenna patters for a single doppler channel, for the three michelson channels or for the AET TDI channels and calculation of noise power spectra for various channel combinations.
+    Module containing geometry methods. The methods here include calculation of antenna patterns for
+    a single doppler channel, for the three michelson channels or for the AET TDI channels and
+    calculation of noise power spectra for various channel combinations.
     '''
 
-    def __init__(self):
+    def __init__(self, params: dict, inj: dict, injection: bool):
+        self.params = params
+        self.inj = inj
+        self.injection = injection
 
         if (not self.injection and self.params['sph_flag']) or (self.injection and self.inj['sph_flag']):
-        
-#        if self.params['sph_flag'] or self.inj['sph_flag']:
             sph_geometry.__init__(self)
 
 

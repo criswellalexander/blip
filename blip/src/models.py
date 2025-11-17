@@ -65,7 +65,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         self.time_dim = tsegmid.size
         self.name = submodel_name
         self.injection = injection
-        geometry.__init__(self)
+        # FIXME geometry is not a parent class. What is going on here?
+        geometry.__init__(self, params, inj, injection)
         
         ## remove the duplicate identifier if needed (powerlaw_isgwb-3 -> powerlaw_isgwb)
         submodel_full_name = submodel_name

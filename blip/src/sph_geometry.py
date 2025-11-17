@@ -7,6 +7,7 @@ from blip.src.clebschGordan import clebschGordan
 
 class sph_geometry(clebschGordan):
 
+    # FIXME uninitialized self.params, self.f0, self.inj, self.lisa_orbits
     def __init__(self):
         clebschGordan.__init__(self)
 
