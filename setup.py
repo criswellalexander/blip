@@ -21,7 +21,7 @@ setup(
     package_dir={"blip":"blip"},
     scripts=["blip/run_blip"],
     install_requires=[
-        "numpy>=2.0",
+        "numpy>=2.0,<2.4",
         "matplotlib",
         "healpy",
         "scipy",
@@ -34,7 +34,9 @@ setup(
         "dynesty",
         "emcee",
         "numpyro",
-        "jax"
+        "jax",
+        "pytest",
+        "h5py"
     ],
     extras_require={
             "gpu":["jax[cuda12]"]},
