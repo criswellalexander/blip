@@ -8,7 +8,7 @@ from multiprocessing import Pool
 from jax import config
 config.update("jax_enable_x64", True)
 import healpy as hp
-from scipy.special import sph_harm
+from scipy.special import sph_harm_y
 from blip.src.sph_geometry import sph_geometry
 from tqdm import tqdm
 import os
@@ -597,7 +597,7 @@ class fast_geometry(sph_geometry):
                 ## Get the spherical harmonics
                 for ii in range(alm_size):
                     lval, mval = self.idxtoalm(sm.almax, ii)
-                    self.Ylms[:, ii] = sph_harm(mval, lval, phi, theta)
+                    self.Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi) ## theta, phi switched due to new scipy convention
                 sm.response_shape = (3,3,f0.size, tsegmid.size,alm_size)
                 sm.response_wrapper_func = "sph_asgwb_wrapper"
                 wrappers.append("sph_asgwb_wrapper")
