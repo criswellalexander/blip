@@ -34,7 +34,8 @@ setup(
         "dynesty",
         "emcee",
         "numpyro",
-        "jax"
+        "jax",
+        "h5py",
     ],
     extras_require={
             "gpu":["jax[cuda12]"]},
