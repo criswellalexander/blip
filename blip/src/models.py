@@ -1,9 +1,12 @@
+import os, shutil, pickle
+from enum import Enum
+from dataclasses import dataclass
+
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 import healpy as hp
 import logging
-import os, shutil, pickle
 import time
 #from multiprocessing import Pool
 from blip.src.utils import log_manager, catch_duplicates, gen_suffixes, catch_color_duplicates, get_robson19_shape_pars_from_tobs
@@ -15,11 +18,41 @@ from blip.src.astro import Population
 from blip.src.instrNoise import instrNoise
 import blip.src.astro as astro
 
-from jax import config
-config.update("jax_enable_x64", True)
 import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
+jax.config.update("jax_enable_x64", True)
+
+class SubmodelKind(Enum):
+    """
+    Kind of submodel specifier string. Most are SPECTRAL_SPATIAL, but in case we want to derive both the spectrum and
+    the spatial model from a population, we are allowed to write 'population' rather than 'population_population'. In
+    the case of instrumental noise, there is no spatial model, so it is just written 'noise' or 'fixednoise'.
+    """
+    NOISE = 1
+    POPULATION = 2
+    SPECTRAL_SPATIAL = 3
+
+
+@dataclass
+class SubmodelSpec:
+    """
+    Parsed (therefore valid) specification of a submodel. Use this in submodel.__init__().
+    
+    To get a spec from a string, use blip.config.parse_model_spec().
+    """
+    name: str
+    kind: SubmodelKind
+    is_injection: bool
+    spectral: str | None
+    spatial: str | None
+    count: str
+    raw_name: str
+    truevals: dict
+
+    # only for analysis models
+    fixedvals: dict  # empty dict if missing
+    alias: str | None
 
 
 class submodel(fast_geometry,clebschGordan,instrNoise):
@@ -31,7 +64,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
     New models (injection or analysis) should be added here.
     
     '''
-    def __init__(self,params,inj,submodel_name,fs,f0,tsegmid,injection=False,suffix='',parallel_response=False):
+    def __init__(self,params,inj,spec: SubmodelSpec,fs,f0,tsegmid,injection=False,suffix='',parallel_response=False):
         '''
         Each submodel should be defined as "[spectral]_[spatial]", save for the noise model, which is just "noise".
         
@@ -42,7 +75,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         Arguments
         ------------
         params, inj (dict)  : params and inj config dictionaries as generated in run_blip.py
-        submodel_name (str) : submodel name, defined as "[spectral]_[spatial]" (or just "noise")
+        spec (SubmodelSpec) : submodel specification, as parsed by config.parse_spec_analysis or parse_spec_injection
         fs, f0 (array)      : frequency array and its LISA-characteristic-frequency-scaled counterpart (f0=fs/(2*fstar))
         tsegmid (array)     : array of time segment midpoints
         injection (bool)    : If True, generate the submodel as an injection component, rather than a Model submodel.
@@ -63,41 +96,30 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         self.f0 = f0
         self.tsegmid = tsegmid
         self.time_dim = tsegmid.size
-        self.name = submodel_name
         self.injection = injection
         # FIXME geometry is not a parent class. What is going on here?
         geometry.__init__(self, params, inj, injection)
         
-        ## remove the duplicate identifier if needed (powerlaw_isgwb-3 -> powerlaw_isgwb)
-        submodel_full_name = submodel_name
-        submodel_split = submodel_full_name.split('-')
-        submodel_name = submodel_split[0]
-        if len(submodel_split) == 1:
-            submodel_count = ''
-        elif len(submodel_split) == 2:
-            submodel_count = ' ({})'.format(submodel_split[1])
-        else:
-            raise ValueError("'{}' is not a valid submodel/component specfication.".format(submodel_full_name))
-        
-        if submodel_full_name in params['alias'].keys():
-            self.alias = params['alias'][submodel_full_name]
-        
-        if injection:
-            self.truevals = {}
-            ## for ease of use, assign the trueval dict to a variable
-            if submodel_full_name in self.inj['truevals'].keys():
-                self.injvals = self.inj['truevals'][submodel_full_name]
-        else:
-            self.fixedvals = {}
-            if submodel_full_name in self.params['fixedvals'].keys():
-                self.fixedvals |= self.params['fixedvals'][submodel_full_name]
+        self.name = spec.raw_name
+        self.name_split = (spec.name, spec.count)
+        self.spectral_model_name = spec.spectral
+        self.spatial_model_name = spec.spatial
+        self.injvals = spec.truevals
+        self.truevals = {}  # truevals keys will be processed and renamed case-by-case
+        self.fixedvals = spec.fixedvals
+        self.alias = spec.alias
+
+        submodel_count = spec.count
         
         ## plot kwargs dict to allow for case-by-case exceptions to our usual plotting approach
         ## e.g., the population spectra look real weird as dotted lines.
         self.plot_kwargs = {}
             
-        ## handle & return noise case in bespoke fashion, as it is quite different from the signal models
-        if submodel_name == 'noise':
+        self.parameters = []
+        self.spectral_parameters = []
+        self.spatial_parameters = []
+        
+        if spec.kind == SubmodelKind.NOISE and spec.name == "noise":
             self.spectral_parameters = [r'$\log_{10} (N_p)$'+suffix, r'$\log_{10} (N_a)$'+suffix]
             self.spatial_parameters = []
             self.parameters = self.spectral_parameters
@@ -135,7 +157,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             
             return
         
-        elif submodel_name == 'fixednoise':
+        elif spec.kind == SubmodelKind.NOISE and spec.name == "fixednoise":
             self.spectral_parameters = []
             self.spatial_parameters = []
             self.parameters = []
@@ -170,17 +192,6 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 raise ValueError("Fixed submodels are not supported for injections. Use the corresponding unfixed submodel.")
             
             return
-
-        else:
-            self.parameters = []
-            self.spectral_parameters = []
-            self.spatial_parameters = []
-            ## for convenience, so there's no need to specify e.g., "population_population"
-            if submodel_name == 'population':
-                self.spectral_model_name = self.spatial_model_name = submodel_name
-            else:
-                self.spectral_model_name, self.spatial_model_name = submodel_name.split('_')
-            
             
         
         ###################################################
@@ -444,7 +455,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         elif self.spectral_model_name == 'population':
             if not injection:
                 raise ValueError("Populations are injection-only.")
-            popdict = self.inj['popdict'][submodel_full_name]
+            popdict = self.inj['popdict'][spec.raw_name]
             if popdict['name'] is not None:
                 self.fancyname = popdict['name']
             else:
@@ -665,7 +676,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.color = 'midnightblue'
                 if self.spectral_model_name != 'population':
                     ## generate population if still needed
-                    popdict = self.inj['popdict'][submodel_full_name]
+                    popdict = self.inj['popdict'][spec.raw_name]
                     if popdict['name'] is not None:
                         self.fancyname = popdict['name']
                     else:
@@ -913,8 +924,8 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         #############################
         ##      FOR TESTING        ##
         #############################
-#        np.save(self.params['out_dir']+'/response_'+submodel_full_name+'.npy',self.response_mat) 
-#        print("Saving response array to "+self.params['out_dir']+'/response_'+submodel_full_name+'.npy')
+#        np.save(self.params['out_dir']+'/response_'+spec.raw_name+'.npy',self.response_mat) 
+#        print("Saving response array to "+self.params['out_dir']+'/response_'+spec.raw_name+'.npy')
         ## store final parameter list and count
         self.parameters = self.parameters + self.spectral_parameters + self.spatial_parameters
         if not injection:               
@@ -1210,7 +1221,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**self.fixedvals['log_omega0'])*(fs/self.params['fref'])**(self.fixedvals['alpha']) * (1+jnp.tanh((fcut-fs)/fscale))
     
-    def compute_Sgw(self,fs,omegaf_args):
+    def compute_Sgw(self,fs,omegaf_args):  # pylint: disable=method-hidden
         '''
         Wrapper function to generically calculate the associated stochastic gravitational wave PSD (S_gw)
             for a spectral model given in terms of the dimensionless GW energy density Omega(f)
@@ -2470,19 +2481,11 @@ class Model():
         self.tsegmid = tsegmid
         self.params = params
         self.inj = inj
-        ## separate into submodels
-        self.submodel_names = params['model'].split('+')
-        
-        ## separate into submodels
-        base_component_names = params['model'].split('+')
-        
-        ## check for and differentiate duplicate injections
-        ## this will append 1 (then 2, then 3, etc.) to any duplicate submodel names
-        ## we will also generate appropriate variable suffixes to use in plots, etc..
-        self.submodel_names = catch_duplicates(base_component_names)
+
+        base_component_names = [spec.raw_name for spec in params["model"]]
+        self.submodel_names = base_component_names
         suffixes = gen_suffixes(base_component_names)
         
-        ## initialize submodels
         self.submodels = {}
         self.Npar = 0
         self.parameters = {}
@@ -2490,9 +2493,12 @@ class Model():
         spectral_parameters = []
         spatial_parameters = []
         self.blm_phase_idx = []
-        for submodel_name, suffix in zip(self.submodel_names,suffixes):
-            sm = submodel(params,inj,submodel_name,fs,f0,tsegmid,suffix=suffix)
+
+        for submodel_spec, suffix in zip(params["model"], suffixes):
+            submodel_name = submodel_spec.raw_name
+            sm = submodel(params,inj,submodel_spec,fs,f0,tsegmid,suffix=suffix)
             self.submodels[submodel_name] = sm
+
             if hasattr(sm,"blm_phase_idx"):
                 for ii in sm.blm_phase_idx:
                     self.blm_phase_idx.append(self.Npar+sm.blm_start+ii)
@@ -2503,6 +2509,7 @@ class Model():
             spectral_parameters += sm.spectral_parameters
             spatial_parameters += sm.spatial_parameters
             all_parameters += sm.parameters
+        
         self.parameters['spectral'] = spectral_parameters
         self.parameters['spatial'] = spatial_parameters
         self.parameters['all'] = all_parameters
@@ -2640,8 +2647,9 @@ class Injection():#geometry,sph_geometry):
         self.tsegmid = tsegmid
         
         ## separate into components
-        self.component_names = inj['injection'].split('+')
-        N_inj = len(self.component_names)
+        self.component_specs = inj['injection']
+        self.component_names = [spec.raw_name for spec in self.component_specs]
+        N_inj = len(self.component_specs)
         
         ### commenting this out because we're switching to active specification of duplicates in the params file
         ## check for and differentiate duplicate injections
@@ -2660,14 +2668,14 @@ class Injection():#geometry,sph_geometry):
 
         ## step through and build components
         ## parallelization has been depreciated now that the response function calculations are handled elsewhere
-        for i, (component_name, suffix) in enumerate(zip(self.component_names,suffixes)):
-            print("Building injection for {} (component {} of {})...".format(component_name,i+1,N_inj))
-            cm = submodel(params,inj,component_name,fs,f0,tsegmid,injection=True,suffix=suffix)
-            self.components[component_name] = cm
-            self.truevals[component_name] = cm.truevals
+        for i, (component_spec, suffix) in enumerate(zip(self.component_specs,suffixes)):
+            print("Building injection for {} (component {} of {})...".format(component_spec.raw_name,i+1,N_inj))
+            cm = submodel(params,inj,component_spec,fs,f0,tsegmid,injection=True,suffix=suffix)
+            self.components[component_spec.raw_name] = cm
+            self.truevals[component_spec.raw_name] = cm.truevals
     
             if cm.has_map:
-                self.plot_skymaps(component_name)
+                self.plot_skymaps(component_spec.raw_name)
         
         ## Having initialized all the components, now compute the LISA response functions
         if self.inj['parallel_inj'] and self.inj['response_nthread']>1:
