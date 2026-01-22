@@ -35,6 +35,8 @@ setup(
         "emcee",
         "numpyro",
         "jax",
+        "chex",
+        "lisaorbits>=3.0",
         "h5py",
     ],
     extras_require={
