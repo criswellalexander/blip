@@ -13,7 +13,7 @@ from blip.src.makeLISAdata import (
     sgwb_inj_length,
     time_frequency_length,
 )
-from blip.src.models import SubmodelKind, SubmodelSpec
+from blip.src.submodel import SubmodelKind, SubmodelSpec
 from blip.src.utils import catch_duplicates
 
 
@@ -135,6 +135,7 @@ SECTION_PARAMS = [
     ),
     Option("lmax", desc="spherical harmonic lmax for the b_lms (a_lmax/2)"),
     Option("hierarchy", desc="FIXME: doesn't do anything!"),
+    Option("faster_geometry", desc="Enable new response module", default="false")
 ]
 
 SECTION_INJ = [
@@ -440,6 +441,7 @@ def parse_config(paramsfile: str, resume: bool):
         print(
             "This may lead to unexpected prior behavior, as the prior bounds are based on a reference frequency of 1 mHz!"
         )
+    params["faster_geometry"] = config_params.getboolean("faster_geometry")
 
     # params["model"] will be a list[SubmodelAnalysisSpec] and depends on the injections
     # because of aliasing. We postpone that parsing until the injections have been parsed.
