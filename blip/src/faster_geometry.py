@@ -161,15 +161,16 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     # Integrate on sky for each submodel. We do this sequentially with a python for loop
     # and using plain numpy (not jax) arrays. The point of this is to avoid allocating
     # memory for the whole integrand, a large rank-5 tensor.
+
+    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
+    _interpolate = jit(_interpolate)
     for sm in submodels:
         if sm.has_map:
             chex.assert_shape(sm.skymap, (npix,))
             dOmega = 4 * np.pi / npix
             integral = np.zeros((3, 3, nf, nt))
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
-                response = interpolate_response(
-                    times, freqs, times_sparse, freqs_sparse, response_sparse
-                )
+                response = _interpolate(response_sparse)
                 integral += sm.skymap[i] * response * dOmega
 
             if params["tdi_lev"] == "xyz":
@@ -223,9 +224,11 @@ def get_sparse_tf_grid(times, freqs):
     return times_sparse, freqs_sparse
 
 
-def interpolate_response(times, freqs, times_sparse, freqs_sparse, response_sparse):
+def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
     """
-    Interpolate the given sparse response to a dense time-frequency grid.
+    Generate interpolator function for response matrices.
+
+    The interpolated response assumes 1-year periodicity for time.
 
     Parameters
     ----------
@@ -237,30 +240,40 @@ def interpolate_response(times, freqs, times_sparse, freqs_sparse, response_spar
         sparse time grid
     freqs_sparse : array (nf_s,)
         sparse frequency grid
-    response_sparse : complex array (3, 3, nf_s, nt_s)
-        the sparse response matrix
 
     Returns
     -------
-    complex array (3, 3, nf, nt)
-        The response matrix, linearly interpolated from the sparse grid assuming 1-year
-        periodicity for time.
+    function
+        an interpolator that receives a complex array of shape (3, 3, nf_s, nt_s) (the
+        sparse response matrix) and returns a complex array (3, 3, nf, nt).
+
+    Examples
+    --------
+    >>> t_sparse, f_sparse = get_sparse_tf_grid(times, freqs)
+    >>> _interpolate = get_response_interpolator(times, freqs, t_sparse, f_sparse)
+    >>> response = jax.jit(_interpolate)(response_sparse)
     """
     chex.assert_rank([times, freqs, times_sparse, freqs_sparse], 1)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
-    chex.assert_shape(response_sparse, (3, 3, nf_s, nt_s))
 
-    # Interpolate on times, then on frequencies
-    rs_batched_t = response_sparse.reshape((-1, nt_s))
-    interp_vect = jit(vmap(lambda r: jnp.interp(times, times_sparse, r, period=YEAR)))
-    response_sparse_f = interp_vect(rs_batched_t).reshape((3, 3, nf_s, nt))
+    interp_vect = vmap(lambda r: jnp.interp(times, times_sparse, r, period=YEAR))
+    interp_vecf = vmap(lambda r: jnp.interp(freqs, freqs_sparse, r))
 
-    rsf_batched_f = response_sparse_f.transpose(0, 1, 3, 2).reshape((-1, nf_s))
-    interp_vecf = jit(vmap(lambda r: jnp.interp(freqs, freqs_sparse, r)))
-    response = interp_vecf(rsf_batched_f).reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
+    def interpolator(response_sparse):
+        chex.assert_shape(response_sparse, (3, 3, nf_s, nt_s))
 
-    chex.assert_shape(response, (3, 3, nf, nt))
-    return response
+        rs_batched_t = response_sparse.reshape((-1, nt_s))
+        response_sparse_f = interp_vect(rs_batched_t).reshape((3, 3, nf_s, nt))
+
+        rsf_batched_f = response_sparse_f.transpose(0, 1, 3, 2).reshape((-1, nf_s))
+        response = (
+            interp_vecf(rsf_batched_f).reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
+        )
+
+        chex.assert_shape(response, (3, 3, nf, nt))
+        return response
+
+    return interpolator
 
 
 def mich_response_unconvolved(t, f, n, orbits):
