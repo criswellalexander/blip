@@ -152,7 +152,12 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     # Loop over sky directions sequentially
     print("Computing LISA response functions...")
     responses_sparse = []
-    for i, pix_vec in tqdm(zip(active_pixels_idx, active_pixels_vecs)):
+    for i, pix_vec in tqdm(
+        zip(active_pixels_idx, active_pixels_vecs),
+        total=len(active_pixels_idx),
+        desc="response",
+        unit="pixel",
+    ):
         responses_sparse.append(mru_vec2(times_sparse, freqs_sparse, pix_vec, orbits))
 
     chex.assert_shape(responses_sparse[0], (3, 3, nf_s, nt_s))
