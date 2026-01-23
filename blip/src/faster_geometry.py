@@ -69,10 +69,12 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     times : array (ntimes,)
         times.
     submodels : list[submodel]
-        The submodels who response matrices will be computed. These objects also act as
-        output parameters: after the procedure has run, each of them will receive a
-        response matrix as an attribute, which is an array of shape (3, 3, nfreqs,
-        ntimes).
+        The submodels whose response matrices will be computed. They must be in pixel
+        basis and have a skymap attribute, not assumed normalized.
+
+        These objects also act as output parameters: after the procedure has run, each
+        of them will receive a response matrix as an attribute, which is an array of
+        shape (3, 3, nfreqs, ntimes).
 
         The attributes used for the output depend on the value of plot_flag: the
         response matrix will be written to sm.response_mat and sm.inj_response_mat if it
@@ -84,6 +86,12 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         sm.inj_response_mat, but to submodel.fdata_response_mat. This is useful for
         plotting simulation and analysis models together (hence the name). Defaults to
         False.
+
+    Warnings
+    --------
+    This code is experimental and is missing many of BLIP's functionalities. It can only
+    deal with fixed skymaps in pixel basis, for anisotropic submodels, in tdi_lev set to
+    'mich' or 'xyz'. Even the quantitative details are still subject to change.
     """
 
     chex.assert_rank([freqs, times], 1)
@@ -174,9 +182,13 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             chex.assert_shape(sm.skymap, (npix,))
             dOmega = 4 * np.pi / npix
             integral = np.zeros((3, 3, nf, nt))
+
+            chex.assert_rank(sm.skymap, 1)
+            skymap_normalized = sm.skymap / jnp.sum(sm.skymap) / dOmega
+
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                 response = _interpolate(response_sparse)
-                integral += sm.skymap[i] * response * dOmega
+                integral += skymap_normalized[i] * response * dOmega
 
             if params["tdi_lev"] == "xyz":
                 mich_to_x1 = 4 * jnp.sin(freqs / FSTAR) ** 2
