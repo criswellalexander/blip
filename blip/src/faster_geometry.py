@@ -23,7 +23,7 @@ from astropy import units
 from astropy.coordinates import SkyCoord
 
 import lisaorbits
-from lisaconstants import SPEED_OF_LIGHT as CLIGHT
+from lisaconstants import SPEED_OF_LIGHT as CLIGHT, ASTRONOMICAL_YEAR as YEAR
 
 from . import submodel
 
@@ -31,6 +31,8 @@ ARMLENGTH = 2.5e9
 FSTAR = CLIGHT / (2 * jnp.pi * ARMLENGTH)
 
 logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
+# logger.addHandler(logging.StreamHandler())
 
 # This module leans heavily on JAX automatic vectorization and JIT compilation. All the
 # functions are written for the simplest possible array shapes (mostly scalars), making
@@ -45,7 +47,8 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     attribute.
 
     This procedure avoids redundant calculations by only computing the response for a
-    given pixel once.
+    given pixel once. It also uses a sparse time-frequency grid and linearly
+    interpolates the results in-between.
 
     It mirrors the functionality in fast_geometry.calculate_response_functions().
 
@@ -107,32 +110,36 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     )  # (3, 3, nfreqs, ntimes)
     mru_vec2 = jit(_mru_vec2)
 
-    _compiled = mru_vec2.lower(times, freqs, active_pixels_vecs[0], orbits).compile()
+    times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
+    nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
+
+    _compiled = mru_vec2.lower(
+        times_sparse, freqs_sparse, active_pixels_vecs[0], orbits
+    ).compile()
+    logger.debug("freq range %f - %f", freqs[0], freqs[-1])
+    logger.debug("sparse ntimes = %d, sparse nfreqs = %d", nt_s, nf_s)
     logger.debug("response execution cost analysis: %s", _compiled.cost_analysis())
     logger.debug("response memory cost analysis: %s", _compiled.memory_analysis())
-    # From the test in test_faster_geometry.py on a laptop's GPU:
-    # For ntimes=61, nfreqs=1250, we get
-    # output size = 11 MB     =>  144 bytes / time / freq / pixel (complex 3x3 matrix)
-    # bytes accessed = 191 MB => 2513 bytes / time / freq / pixel
-    # flops = 66 Gflop        =>  866  flop / time / freq / pixel
+    # From a CPU test:
+    #    output size =  144 bytes / time / freq / pixel (one complex 3x3 matrix)
+    # bytes accessed = 3049 bytes / time / freq / pixel
+    #          flops = 1378  flop / time / freq / pixel
 
     # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM. We assume
     # equal and constant LTTs, so our SGWB can be perfectly described by two real
     # series: the AA and EE time-varying PSDs. That would reduce the output from 144
     # bytes to 16 bytes per time per frequency per pixel. And that's still using double
     # precision, which we don't need for the response matrix output (also wastes FLOPs).
-    # Using single precision we could do 144 -> 8 bytes, an 18x compression. That's not
-    # even counting the fact that our envelope varies slowly in time, so we could use a
-    # coarser time grid and just interpolate. Probably same for frequencies.
+    # Using single precision we could do 144 -> 8 bytes, an 18x compression.
 
     # do sky sequentially
     print("Computing LISA response functions...")
-    responses = []
+    responses_sparse = []
     for i, pix_vec in tqdm(zip(active_pixels_idx, active_pixels_vecs)):
-        responses.append(mru_vec2(times, freqs, pix_vec, orbits))
+        responses_sparse.append(mru_vec2(times_sparse, freqs_sparse, pix_vec, orbits))
 
-    chex.assert_shape(responses[0], (3, 3, freqs.shape[0], times.shape[0]))
-    chex.assert_equal_shape(responses)
+    chex.assert_shape(responses_sparse[0], (3, 3, nf_s, nt_s))
+    chex.assert_equal_shape(responses_sparse)
 
     # Integrate on sky for each submodel. We do this sequentially with a python for loop
     # and using plain numpy (not jax) arrays. The point of this is to avoid allocating
@@ -141,8 +148,11 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         if sm.has_map:
             chex.assert_shape(sm.skymap, (npix,))
             dOmega = 4 * np.pi / npix
-            integral = np.zeros((3, 3, freqs.shape[0], times.shape[0]))
-            for i, response in zip(active_pixels_idx, responses):
+            integral = np.zeros((3, 3, nf, nt))
+            for i, response_sparse in zip(active_pixels_idx, responses_sparse):
+                response = interpolate_response(
+                    times, freqs, times_sparse, freqs_sparse, response_sparse
+                )
                 integral += sm.skymap[i] * response * dOmega
 
             # TODO convert to TDI gen 1 here (multiply by factor)
@@ -162,6 +172,39 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
         else:
             raise NotImplementedError
+
+
+def get_sparse_tf_grid(times, freqs):
+    chex.assert_rank([times, freqs], 1)
+    _ = times
+
+    # approx 52 weeks, two per week, including endpoint. Used in periodic interpolation.
+    # TODO optimize for times[-1] < YEAR
+    times_sparse = jnp.linspace(0, YEAR, 105)
+
+    # linear grid of step 1 mHz is largely enough (response variation insignificant)
+    freqs_sparse = jnp.arange(freqs[0], freqs[-1], 1e-3)
+
+    chex.assert_rank([times_sparse, freqs_sparse], 1)
+    return times_sparse, freqs_sparse
+
+
+def interpolate_response(times, freqs, times_sparse, freqs_sparse, response_sparse):
+    chex.assert_rank([times, freqs, times_sparse, freqs_sparse], 1)
+    nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
+    chex.assert_shape(response_sparse, (3, 3, nf_s, nt_s))
+
+    # Interpolate on times, then on frequencies
+    rs_batched_t = response_sparse.reshape((-1, nt_s))
+    interp_vect = jit(vmap(lambda r: jnp.interp(times, times_sparse, r, period=YEAR)))
+    response_sparse_f = interp_vect(rs_batched_t).reshape((3, 3, nf_s, nt))
+
+    rsf_batched_f = response_sparse_f.transpose(0, 1, 3, 2).reshape((-1, nf_s))
+    interp_vecf = jit(vmap(lambda r: jnp.interp(freqs, freqs_sparse, r)))
+    response = interp_vecf(rsf_batched_f).reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
+
+    chex.assert_shape(response, (3, 3, nf, nt))
+    return response
 
 
 def mich_response_unconvolved(t, f, n, orbits):
