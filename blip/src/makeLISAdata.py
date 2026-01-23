@@ -146,7 +146,7 @@ class LISAdata():
 
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
-        for ii in tqdm(range(self.injection.nsplice)):
+        for ii in tqdm(range(self.injection.nsplice), desc=injmodel.name, unit="splice"):
             ## move frequency to be the zeroth-axis, then cholesky decomp
             ## this sometimes breaks on GPU for unclear reasons, hence the try/except
             try:

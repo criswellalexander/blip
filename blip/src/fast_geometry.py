@@ -686,7 +686,7 @@ class fast_geometry(sph_geometry):
                     self.unpack_wrapper(ii,R_f)
         ## the non-parallel version has a nice progress bar :)
         else:
-            for ii in tqdm(idx):
+            for ii in tqdm(idx, desc="response", unit="frequency"):
                 R_f = self.frequency_response_wrapper(ii)
                 self.unpack_wrapper(ii,R_f)        
 
