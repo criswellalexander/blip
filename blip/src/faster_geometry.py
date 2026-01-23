@@ -9,6 +9,20 @@ The objective is to compute the LISA response for a given sky direction, frequen
 time. This is done in `mich_response_unconvolved`.
 """
 
+# This module leans heavily on JAX automatic vectorization and JIT compilation. All the
+# functions are written for the simplest possible array shapes (mostly scalars), making
+# them easier to check for correctness. Trace-time assertions, mostly on array shapes,
+# have also been placed as strong comments all throughout the code.
+
+# The formulas implemented here are exactly the ones in the original BLIP paper
+# Banagiri+21, with two exceptions:
+# - the mistaken factor of 1/4pi is removed from eq. (18) which defines the response
+#   matrix;
+# - all throughout this module, the sign of n is flipped wrt. the paper, i.e. the vector
+#   n here means the direction towards the GW source, not from the source.
+
+# TODO check if the sign of n conflicts with the rest of BLIP.
+
 import functools
 import logging
 
@@ -34,17 +48,11 @@ logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 # logger.addHandler(logging.StreamHandler())
 
-# This module leans heavily on JAX automatic vectorization and JIT compilation. All the
-# functions are written for the simplest possible array shapes (mostly scalars), making
-# them easier to check for correctness. Trace-time assertions, mostly on array shapes,
-# have also been placed as strong comments all throughout the code.
 
-
-# This is the only procedure where numpy is used.
+# This is the only procedure where plain numpy is used.
 def calculate_response_functions(freqs, times, submodels, params, plot_flag=False):
     """
-    Compute SGWB responses for each submodel and write it to the sm.response_mat
-    attribute.
+    Compute SGWB responses for each submodel and write it to the submodel attributes.
 
     This procedure avoids redundant calculations by only computing the response for a
     given pixel once. It also uses a sparse time-frequency grid and linearly
@@ -52,21 +60,30 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     It mirrors the functionality in fast_geometry.calculate_response_functions().
 
+    Only healpix (not spherical harmonic) responses are supported.
+
     Parameters
     ----------
     freqs : array (nfreqs,)
-        frequencies
+        frequencies.
     times : array (ntimes,)
-        times
+        times.
     submodels : list[submodel]
-        The submodels which will receive summed response matrices. After the procedure
-        has run, each submodel will have a response_mat attribute, which is an array of
-        shape (3, 3, nfreqs, ntimes). Only healpix supported.
+        The submodels who response matrices will be computed. These objects also act as
+        output parameters: after the procedure has run, each of them will receive a
+        response matrix as an attribute, which is an array of shape (3, 3, nfreqs,
+        ntimes).
+
+        The attributes used for the output depend on the value of plot_flag: the
+        response matrix will be written to sm.response_mat and sm.inj_response_mat if it
+        is False, or to sm.fdata_response_mat if it is True.
     params: dict
         Parameter dictionary from parse_config().
     plot_flag : bool, optional
-        If True, don't write to submodel.response_mat but to
-        submodel.fdata_response_mat. Defaults to False
+        If True, don't write the output response matrix to sm.response_mat or
+        sm.inj_response_mat, but to submodel.fdata_response_mat. This is useful for
+        plotting simulation and analysis models together (hence the name). Defaults to
+        False.
     """
 
     chex.assert_rank([freqs, times], 1)
@@ -128,11 +145,11 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM. We assume
     # equal and constant LTTs, so our SGWB can be perfectly described by two real
     # series: the AA and EE time-varying PSDs. That would reduce the output from 144
-    # bytes to 16 bytes per time per frequency per pixel. And that's still using double
-    # precision, which we don't need for the response matrix output (also wastes FLOPs).
+    # bytes to 16 bytes per time per frequency per pixel (9x compression). And that's
+    # still using double precision, which we don't need for the response matrix output.
     # Using single precision we could do 144 -> 8 bytes, an 18x compression.
 
-    # do sky sequentially
+    # Loop over sky directions sequentially
     print("Computing LISA response functions...")
     responses_sparse = []
     for i, pix_vec in tqdm(zip(active_pixels_idx, active_pixels_vecs)):
@@ -155,11 +172,11 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                 )
                 integral += sm.skymap[i] * response * dOmega
 
-            # TODO convert to TDI gen 1 here (multiply by factor)
             if params["tdi_lev"] == "xyz":
                 mich_to_x1 = 4 * jnp.sin(freqs / FSTAR) ** 2
                 integral = integral * mich_to_x1[np.newaxis, np.newaxis, :, np.newaxis]
             elif params["tdi_lev"] == "aet":
+                # TODO
                 raise NotImplementedError
             else:
                 params
@@ -175,6 +192,23 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
 
 def get_sparse_tf_grid(times, freqs):
+    """
+    Generate a sparse time-frequency grid suitable for interpolation.
+
+    Parameters
+    ----------
+    times : array (ntimes,)
+        dense time grid
+    freqs : array (nfreqs,)
+        dense frequency grid
+
+    Returns
+    -------
+    array 1D
+        sparse time grid
+    array 1D
+        sparse frequency grid
+    """
     chex.assert_rank([times, freqs], 1)
     _ = times
 
@@ -190,6 +224,28 @@ def get_sparse_tf_grid(times, freqs):
 
 
 def interpolate_response(times, freqs, times_sparse, freqs_sparse, response_sparse):
+    """
+    Interpolate the given sparse response to a dense time-frequency grid.
+
+    Parameters
+    ----------
+    times : array (nt,)
+        dense (target) time grid
+    freqs : array (nf,)
+        dense (target) frequency grid
+    times_sparse : array (nt_s,)
+        sparse time grid
+    freqs_sparse : array (nf_s,)
+        sparse frequency grid
+    response_sparse : complex array (3, 3, nf_s, nt_s)
+        the sparse response matrix
+
+    Returns
+    -------
+    complex array (3, 3, nf, nt)
+        The response matrix, linearly interpolated from the sparse grid assuming 1-year
+        periodicity for time.
+    """
     chex.assert_rank([times, freqs, times_sparse, freqs_sparse], 1)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
     chex.assert_shape(response_sparse, (3, 3, nf_s, nt_s))
@@ -233,7 +289,7 @@ def mich_response_unconvolved(t, f, n, orbits):
     res = jnp.zeros((3, 3), dtype=complex)
 
     # This loop intentionally uses python control flow so that it is
-    # unrolled in tracing and the channels (c1, c2) are statically known.
+    # unrolled in tracing and the channels (c1, c2) are trace-time known.
     for c1 in range(3):
         for c2 in range(c1, 3):
             fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
@@ -383,11 +439,8 @@ def get_link_vectors(t, orbits):
     return res
 
 
-LINKS = lisaorbits.LINKS
-
-
 # Surprisingly, this does not exist in jax.scipy.special
-def sinc(x):
+def _sinc(x):
     # Inner select avoids NaN when differentiating at x=0
     _x = jnp.select([x != 0, True], [x, 1.0])
     return jnp.select([x != 0, True], [jnp.sin(_x) / _x, 1.0])
@@ -416,8 +469,8 @@ def timing_transfer_fn(f, costheta):
     chex.assert_shape([f, costheta], ())
 
     f0 = f / (2 * FSTAR)
-    s1 = sinc(f0 * (1 + costheta))
-    s2 = sinc(f0 * (1 - costheta))
+    s1 = _sinc(f0 * (1 + costheta))
+    s2 = _sinc(f0 * (1 - costheta))
     e1 = jnp.exp(-1j * f0 * (3 - costheta))
     e2 = jnp.exp(-1j * f0 * (1 - costheta))
     res = 0.5 * (s1 * e1 + s2 * e2)
@@ -496,7 +549,7 @@ def arm_orientations(t, sc, orbits):
     array (3,)
         Unit vector pointing away from the given spacecraft (1 -> 2, 2 -> 3, 3 -> 1).
     """
-    # sc=1,2,3 must be statically known
+    # sc=1,2,3 must be trace-time known
     chex.assert_shape([t, sc], ())
     assert 1 <= sc and sc <= 3
 
@@ -583,7 +636,7 @@ def mich_antenna_pattern(t, f, n, polarization: str, channel, orbits):
     complex
         The antenna pattern.
     """
-    # polarization and channel must be statically known
+    # polarization and channel must be trace-time known
     chex.assert_shape([t, f, channel], ())
     chex.assert_shape(n, (3,))
     assert polarization in ["plus", "cross"]
