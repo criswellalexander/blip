@@ -17,34 +17,54 @@ import numpy as np
 
 class SubmodelKind(Enum):
     """
-    Kind of submodel specifier string. Most are SPECTRAL_SPATIAL, but in case we want to derive both the spectrum and
-    the spatial model from a population, we are allowed to write 'population' rather than 'population_population'. In
-    the case of instrumental noise, there is no spatial model, so it is just written 'noise' or 'fixednoise'.
+    Kind of submodel specifier string.
+
+    Most are 'spectral_spatial'.
+
+    There are only two exceptions:
+    - 'population', which is shorthand for 'population_population';
+    - 'noise' and 'fixednoise', because there is no spatial model for noise.
     """
     NOISE = 1
+    """'noise' or 'fixednoise' submodel."""
     POPULATION = 2
+    """'population' submodel, shorthand for 'population_population'."""
     SPECTRAL_SPATIAL = 3
+    """General spectral_spatial submodel specifier. Example: 'powerlaw_fixedgalaxy'."""
 
 
 @dataclass
 class SubmodelSpec:
     """
-    Parsed (therefore valid) specification of a submodel. Use this in submodel.__init__().
+    Parsed (hence valid) specification of a submodel. Use this in submodel.__init__().
     
-    To get a spec from a string, use blip.config.parse_model_spec().
+    To get a specification from a string, use blip.config.parse_model_spec().
     """
     name: str
+    """Submodel name without duplicate count. Example: 'population-1' ->
+    'population'."""
     kind: SubmodelKind
+    """Kind of specifier string."""
     is_injection: bool
+    """True if the submodel is intended to be used as part of an injection. False if it
+    is intended for analysis."""
     spectral: str | None
+    """Spectral model."""
     spatial: str | None
+    """Spatial model."""
     count: str
+    """Duplicate count enclosed by parenthesis. Example: 'powerlaw_isgwb-2' -> '(2)'."""
     raw_name: str
+    """Complete submodel name. Used as unique id."""
     truevals: dict
+    """True parameter values. For analysis submodels, this is derived from the aliased
+    injection submodel."""
 
-    # only for analysis models
+    # only for analysis submodels
     fixedvals: dict  # empty dict if missing
+    """Fixed values of parameters. Only for analysis (not injection) submodels."""
     alias: str | None
+    """Raw name of aliased injection submodel. Only used in analysis submodels."""
 
 
 class submodel(fast_geometry,clebschGordan,instrNoise):
