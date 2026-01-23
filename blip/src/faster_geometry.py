@@ -1,10 +1,12 @@
 """
-GW response computation functions. This module is meant to replace `fast_geometry` for fixed-skymap pixel responses.
+GW response computation functions. This module is meant to replace `fast_geometry` for
+fixed-skymap pixel responses.
 
-The main procedure is `calculate_response_functions`, which is used to interface with the rest of BLIP.
+The main procedure is `calculate_response_functions`, which is used to interface with
+the rest of BLIP.
 
-The objective is to compute the LISA response for a given sky direction, frequency and time. This is done in
-`mich_response_unconvolved`.
+The objective is to compute the LISA response for a given sky direction, frequency and
+time. This is done in `mich_response_unconvolved`.
 """
 
 import functools
@@ -30,16 +32,20 @@ FSTAR = CLIGHT / (2 * jnp.pi * ARMLENGTH)
 
 logger = logging.getLogger(__name__)
 
-# This module leans heavily on JAX automatic vectorization and JIT compilation. All the functions are written for the
-# simplest possible array shapes (mostly scalars), making them easier to check for correctness. Trace-time assertions,
-# mostly on array shapes, have also been placed as strong comments all throughout the code.
+# This module leans heavily on JAX automatic vectorization and JIT compilation. All the
+# functions are written for the simplest possible array shapes (mostly scalars), making
+# them easier to check for correctness. Trace-time assertions, mostly on array shapes,
+# have also been placed as strong comments all throughout the code.
 
 
 # This is the only procedure where numpy is used.
 def calculate_response_functions(freqs, times, submodels, params, plot_flag=False):
-    """Compute SGWB responses for each submodel and write it to the sm.response_mat attribute.
+    """
+    Compute SGWB responses for each submodel and write it to the sm.response_mat
+    attribute.
 
-    This procedure avoids redundant calculations by only computing the response for a given pixel once.
+    This procedure avoids redundant calculations by only computing the response for a
+    given pixel once.
 
     It mirrors the functionality in fast_geometry.calculate_response_functions().
 
@@ -50,12 +56,14 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     times : array (ntimes,)
         times
     submodels : list[submodel]
-        The submodels which will receive summed response matrices. After the procedure has run, each submodel will have
-        a response_mat attribute, which is an array of shape (3, 3, nfreqs, ntimes). Only healpix supported.
+        The submodels which will receive summed response matrices. After the procedure
+        has run, each submodel will have a response_mat attribute, which is an array of
+        shape (3, 3, nfreqs, ntimes). Only healpix supported.
     params: dict
         Parameter dictionary from parse_config().
     plot_flag : bool, optional
-        If True, don't write to submodel.response_mat but to submodel.fdata_response_mat. Defaults to False
+        If True, don't write to submodel.response_mat but to
+        submodel.fdata_response_mat. Defaults to False
     """
 
     chex.assert_rank([freqs, times], 1)
@@ -104,18 +112,18 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     logger.debug("response memory cost analysis: %s", _compiled.memory_analysis())
     # From the test in test_faster_geometry.py on a laptop's GPU:
     # For ntimes=61, nfreqs=1250, we get
-    # output size = 11 MB     =>  144 bytes / time / freq / pixel (one complex 3x3 matrix)
+    # output size = 11 MB     =>  144 bytes / time / freq / pixel (complex 3x3 matrix)
     # bytes accessed = 191 MB => 2513 bytes / time / freq / pixel
     # flops = 66 Gflop        =>  866  flop / time / freq / pixel
 
-    # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM.
-    # We assume equal and constant LTTs, so our SGWB can be perfectly described by two real
-    # series: the AA and EE time-varying PSDs. That would reduce the output from 144 bytes
-    # to 16 bytes per time per frequency per pixel. And that's still using double precision,
-    # which we don't need for the response matrix output (also wastes FLOPs). Using single
-    # precision we could do 144 -> 8 bytes, an 18x compression. That's not even counting the
-    # fact that our envelope varies slowly in time, so we could use a coarser time grid and
-    # just interpolate. Probably same for frequencies.
+    # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM. We assume
+    # equal and constant LTTs, so our SGWB can be perfectly described by two real
+    # series: the AA and EE time-varying PSDs. That would reduce the output from 144
+    # bytes to 16 bytes per time per frequency per pixel. And that's still using double
+    # precision, which we don't need for the response matrix output (also wastes FLOPs).
+    # Using single precision we could do 144 -> 8 bytes, an 18x compression. That's not
+    # even counting the fact that our envelope varies slowly in time, so we could use a
+    # coarser time grid and just interpolate. Probably same for frequencies.
 
     # do sky sequentially
     print("Computing LISA response functions...")
@@ -156,21 +164,65 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             raise NotImplementedError
 
 
+def mich_response_unconvolved(t, f, n, orbits):
+    """
+    Unconvolved Michelson (TDI gen 0) sky SGWB response.
+
+    Parameters
+    ----------
+    t : float
+        time
+    f : float
+        frequency
+    n : array (3,)
+        normalized vector in the direction of the GW source.
+    orbits : tuple
+        orbital information returned by compute_orbits().
+
+    Returns
+    -------
+    complex array (3, 3)
+        Unconvolved response matrix for the three data channels.
+    """
+    chex.assert_shape([t, f], ())
+    chex.assert_shape(n, (3,))
+
+    res = jnp.zeros((3, 3), dtype=complex)
+
+    # This loop intentionally uses python control flow so that it is
+    # unrolled in tracing and the channels (c1, c2) are statically known.
+    for c1 in range(3):
+        for c2 in range(c1, 3):
+            fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
+            fp2 = mich_antenna_pattern(t, f, n, "plus", c2, orbits)
+            fc1 = mich_antenna_pattern(t, f, n, "cross", c1, orbits)
+            fc2 = mich_antenna_pattern(t, f, n, "cross", c2, orbits)
+            chex.assert_shape([fp1, fp2, fc1, fc2], ())
+            res = res.at[c1, c2].set((fp1 * fp2.conj() + fc1 * fc2.conj()))
+            if c1 != c2:
+                res = res.at[c2, c1].set(res[c1, c2].conj())
+
+    chex.assert_shape(res, (3, 3))
+    return res
+
+
 def compute_orbits(times):
-    """Compute orbit information at specified time array.
+    """
+    Compute orbit information at specified time array.
 
     Parameters
     ----------
     times : array 1D
-        Times at which the positions of the spacecraft and link vectors should be computed.
+        Times at which the positions of the spacecraft and link vectors should be
+        computed.
 
     Returns
     -------
     array 1D
         the input times array
     array (3, ntimes, 3)
-        Spacecraft positions in ecliptic cartesian coordinates as an array, where the first dimension specifies the
-        spacecraft.
+        Spacecraft positions in ecliptic cartesian coordinates as an array, where the
+        first dimension specifies the spacecraft.
     array (6, ntimes, 3)
         Single link unit vectors in lisaorbits order.
     """
@@ -225,11 +277,14 @@ def _icrs_to_ecliptic(positions_icrs):
     return positions_eclp
 
 
-# The following traceable jax functions just look up values from the pre-computed arrays sc_positions and link_vectors.
+# The following traceable jax functions just look up values from the pre-computed arrays
+# sc_positions and link_vectors.
 def get_orbital_positions(t, orbits):
-    """Look up S/C positions in orbits, in a way that is jax-traceable.
+    """
+    Look up S/C positions in orbits, in a way that is jax-traceable.
 
-    This function does not perform interpolation. It will return the 'last known' position of the spacecraft.
+    This function does not perform interpolation. It will return the 'last known'
+    position of the spacecraft.
 
     Parameters
     ----------
@@ -241,7 +296,8 @@ def get_orbital_positions(t, orbits):
     Returns
     -------
     array (3, 3)
-        The positions of the three spacecraft (first axis) in cartesian coordinates (second axis).
+        The positions of the three spacecraft (first axis) in cartesian coordinates
+        (second axis).
     """
     chex.assert_shape(t, ())
     times, sc_positions, _ = orbits
@@ -255,9 +311,11 @@ def get_orbital_positions(t, orbits):
 
 
 def get_link_vectors(t, orbits):
-    """Look up link unit vectors in orbits, in a way that is jax-traceable.
+    """
+    Look up link unit vectors in orbits, in a way that is jax-traceable.
 
-    This function does not perform interpolation. It will return the 'last known' unit vectors.
+    This function does not perform interpolation. It will return the 'last known' unit
+    vectors.
 
     Parameters
     ----------
@@ -269,7 +327,8 @@ def get_link_vectors(t, orbits):
     Returns
     -------
     array (6, 3)
-        The unit vectors in 3D (second axis) for each of the single links (first axis) in lisaorbits order.
+        The unit vectors in 3D (second axis) for each of the single links (first axis)
+        in lisaorbits order.
     """
     chex.assert_shape(t, ())
     times, _, link_vectors = orbits
@@ -292,11 +351,12 @@ def sinc(x):
 
 
 def timing_transfer_fn(f, costheta):
-    """Timing transfer function for two-way photon propagation.
+    """
+    Timing transfer function for two-way photon propagation.
 
-    Checked against Banagiri+21 eq (16) and Cornish & Rubbo 2003 eq (37). Also agrees with Romano & Cornish 2017 eq
-    (5.27) up to a constant 2L/c. This seems due to the conversion between strain and timing measurements, eq (5.4) in
-    the living review.
+    Checked against Banagiri+21 eq (16) and Cornish & Rubbo 2003 eq (37). Also agrees
+    with Romano & Cornish 2017 eq (5.27) up to a constant 2L/c. This seems due to the
+    conversion between strain and timing measurements, eq (5.4) in the living review.
 
     Parameters
     ----------
@@ -324,7 +384,8 @@ def timing_transfer_fn(f, costheta):
 
 
 def mich_detector_tensor(f, u, v, n, r):
-    """Michelson channel detector tensor.
+    """
+    Michelson channel detector tensor.
 
     Checked against Banagiri+21 eq (15).
 
@@ -371,7 +432,8 @@ def mich_detector_tensor(f, u, v, n, r):
 
 
 def arm_orientations(t, sc, orbits):
-    """Get unit vectors for left and right arm of a given spacecraft.
+    """
+    Get unit vectors for left and right arm of a given spacecraft.
 
     The numbering convention is the same as in lisaorbits.
 
@@ -421,7 +483,8 @@ def arm_orientations(t, sc, orbits):
 
 
 def get_ortho_basis_ecliptic_3d(lam, beta):
-    """Get right-handed orthonormal basis (n, l, m).
+    """
+    Get right-handed orthonormal basis (n, l, m).
 
     This is the basis in Romano & Cornish 2017 eq (2.4).
 
@@ -452,7 +515,8 @@ def get_ortho_basis_ecliptic_3d(lam, beta):
 
 
 def mich_antenna_pattern(t, f, n, polarization: str, channel, orbits):
-    """Compute Michelson (TDI gen 0) antenna pattern.
+    """
+    Compute Michelson (TDI gen 0) antenna pattern.
 
     Checked against Banagiri+21 and Romano & Cornish 2017.
 
@@ -507,49 +571,9 @@ def mich_antenna_pattern(t, f, n, polarization: str, channel, orbits):
     return res
 
 
-def mich_response_unconvolved(t, f, n, orbits):
-    """Unconvolved Michelson (TDI gen 0) sky SGWB response.
-
-    Parameters
-    ----------
-    t : float
-        time
-    f : float
-        frequency
-    n : array (3,)
-        normalized vector in the direction of the GW source.
-    orbits : tuple
-        orbital information returned by compute_orbits().
-
-    Returns
-    -------
-    complex array (3, 3)
-        Unconvolved response matrix for the three data channels.
-    """
-    chex.assert_shape([t, f], ())
-    chex.assert_shape(n, (3,))
-
-    res = jnp.zeros((3, 3), dtype=complex)
-
-    # This loop intentionally uses python control flow so that it is
-    # unrolled in tracing and the channels (c1, c2) are statically known.
-    for c1 in range(3):
-        for c2 in range(c1, 3):
-            fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
-            fp2 = mich_antenna_pattern(t, f, n, "plus", c2, orbits)
-            fc1 = mich_antenna_pattern(t, f, n, "cross", c1, orbits)
-            fc2 = mich_antenna_pattern(t, f, n, "cross", c2, orbits)
-            chex.assert_shape([fp1, fp2, fc1, fc2], ())
-            res = res.at[c1, c2].set((fp1 * fp2.conj() + fc1 * fc2.conj()))
-            if c1 != c2:
-                res = res.at[c2, c1].set(res[c1, c2].conj())
-
-    chex.assert_shape(res, (3, 3))
-    return res
-
-
 def all_unit_vecs_healpix(nside):
-    """Compute array of all unit vectors in the sky.
+    """
+    Compute array of all unit vectors in the sky.
 
     Parameters
     ----------
