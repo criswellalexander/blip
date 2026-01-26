@@ -183,7 +183,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             dOmega = 4 * np.pi / npix
             integral = np.zeros((3, 3, nf, nt))
 
-            chex.assert_rank(sm.skymap, 1)
             skymap_normalized = sm.skymap / jnp.sum(sm.skymap) / dOmega
 
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
@@ -196,8 +195,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             elif params["tdi_lev"] == "aet":
                 # TODO
                 raise NotImplementedError
-            else:
-                params
 
             if plot_flag:
                 sm.fdata_response_mat = integral
