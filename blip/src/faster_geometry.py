@@ -291,7 +291,7 @@ def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
 
 
 def mich_response_unconvolved(t, f, n, orbits):
-    """
+    r"""
     Unconvolved Michelson (TDI gen 0) sky SGWB response.
 
     Parameters
@@ -309,6 +309,24 @@ def mich_response_unconvolved(t, f, n, orbits):
     -------
     complex array (3, 3)
         Unconvolved response matrix for the three data channels.
+
+    Notes
+    -----
+    The quantity computed here is exactly
+
+    .. math::
+
+        \frac{1}{2} \sum_{A=+,\times}\left(F_I^A(f, \mathbf{n})^* F_J^A(f, \mathbf{n})
+        \right)
+
+    where :math:`I` and :math:`J` stand for TDI channels, and :math:`F_I^A` are antenna
+    pattern functions.
+
+    This is integrated against the sky map to produce the GW time-frequency correlation
+    matrix.
+
+    The convention here agrees with Criswell+25 eq. (6) (but for a complex conjugate),
+    which is a corrected version of Banagiri+21 eq. (18).
     """
     chex.assert_shape([t, f], ())
     chex.assert_shape(n, (3,))
@@ -324,7 +342,7 @@ def mich_response_unconvolved(t, f, n, orbits):
             fc1 = mich_antenna_pattern(t, f, n, "cross", c1, orbits)
             fc2 = mich_antenna_pattern(t, f, n, "cross", c2, orbits)
             chex.assert_shape([fp1, fp2, fc1, fc2], ())
-            res = res.at[c1, c2].set((fp1 * fp2.conj() + fc1 * fc2.conj()))
+            res = res.at[c1, c2].set(0.5 * (fp1.conj() * fp2 + fc1.conj() * fc2))
             if c1 != c2:
                 res = res.at[c2, c1].set(res[c1, c2].conj())
 
