@@ -9,6 +9,7 @@ Welcome to BLIP's documentation!
    config
    available_models
    tools
+   devguide
    api
 
 
