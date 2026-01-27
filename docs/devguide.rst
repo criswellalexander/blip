@@ -1,6 +1,9 @@
 Developer guide
 ===============
 
+The main pipeline logic is in the script ``run_blip``. Currently this is not a python
+module so it cannot be imported or have its API documented here.
+
 General architecture
 --------------------
 
@@ -14,6 +17,14 @@ whereas the injection is specified by ``inj.injection``.
 The submodels are uniquely identified by the raw strings used to specify them in the
 config file. See the attributes ``components`` and ``component_names`` for an injection
 or ``submodels`` and ``submodel_names`` for a model.
+
+
+Input parameters
+----------------
+
+The input parameters given in the :ref:`configuration <config>` by the user are parsed
+using :func:`parse_config <blip.config.parse_config>` and passed around in BLIP as the
+ubiquitous dictionaries named ``params`` and ``inj``.
 
 
 Time-frequency grids
