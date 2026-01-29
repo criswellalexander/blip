@@ -25,11 +25,19 @@ class BlipConfigDirective(SphinxDirective):
 
     def run(self):
         opts: list[blip.config.Option] = getattr(blip.config, self.arguments[0])
+        # show required options first
+        opts_required = [opt for opt in opts if opt.required]
+        opts_not_requ = [opt for opt in opts if not opt.required]
+        opts = opts_required + opts_not_requ
 
         optnodes = []
         for opt in opts:
-            text = f"**{opt.name}**: {opt.desc}, default {opt.default}, required={opt.required}"
-            optnodes.append(nodes.paragraph(text=text))
+            t1 = f".. confval:: {opt.name}\n"
+            t2 = f"    :default: {opt.default}\n" if not opt.required else ""
+            t3 = f"\n    {opt.desc}\n"
+            text = t1+t2+t3
+            parsed = self.parse_text_to_nodes(text)
+            optnodes.extend(parsed)
         return optnodes
 
 
