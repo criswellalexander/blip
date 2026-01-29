@@ -156,8 +156,15 @@ class LISAdata():
 
             ## generate standard normal complex data first
             if self.gpu:
-                _, jax_key, jax_key_2 = jax.random.split(jax_key,3) ## needed to actually produce a new set of random numbers every time through the loop!
-                z_norm = jax.random.normal(jax_key,shape=(self.injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.injection.frange.size, 3))
+                # Only the subkeys are used in the PRNG, and deleted to prevent reuse.
+                # The main key is only split.
+                jax_key, subkey1, subkey2 = jax.random.split(jax_key, 3)
+                z_norm = jax.random.normal(
+                    subkey1, shape=(self.injection.frange.size, 3)
+                ) + 1j * jax.random.normal(
+                    subkey2, shape=(self.injection.frange.size, 3)
+                )
+                del subkey1, subkey2
             else:
                 z_norm = numpy_rng.normal(size=(self.injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.injection.frange.size, 3))
 
