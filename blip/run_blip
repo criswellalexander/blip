@@ -10,7 +10,9 @@ sys.path.append(os.getcwd()) ## this lets python find src
 # FIXME why is there a src submodule?
 from blip.src.makeLISAdata import LISAdata
 from blip.src.models import Model, Injection
+from blip.src.submodel import SubmodelKind
 from blip.src.fast_geometry import fast_geometry, get_model_responses
+from blip.src.faster_geometry import calculate_response_functions
 from blip.src.utils import ensure_color_matching
 from blip.tools.plotmaker import cornermaker
 from blip.tools.plotmaker import mapmaker
@@ -63,7 +65,11 @@ class LISA(LISAdata, Model):
             self.Model = Model(params,inj,self.fdata,self.f0,self.tsegmid,self.rmat)
             
             ## compute response functions
-            get_model_responses(self.Model)
+            if params["faster_geometry"]:
+                submodels_sgwb = [sm for sm in self.Model.submodels.values() if sm.kind != SubmodelKind.NOISE]
+                calculate_response_functions(self.fdata, self.tsegmid, submodels_sgwb, params)
+            else:
+                get_model_responses(self.Model)
             
             # make sure matching injections/models have matching colors
             if not self.params['load_data']:
@@ -111,7 +117,7 @@ class LISA(LISAdata, Model):
         to generate data. Return Frequency domain data.
         '''
 
-        # SGWB generation parameters precomputed during configuration parsing
+        # Simulation time-frequency grid precomputed during configuration parsing
         nsplice = self.params["nsplice"]
         tsegmid = self.params["tsegmid"]
         Npersplice = self.params["Npersplice"]
@@ -216,10 +222,14 @@ class LISA(LISAdata, Model):
         fstar = 3e8/(2*np.pi*self.armlength)
         # define f0 = f/2f*
         f0_data = self.fdata/(2*fstar)
-        fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.injection.components[cmn] for cmn in self.injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
-        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
-        del fast_rx
+        submodels_sgwb = [self.injection.components[cmn] for cmn in self.injection.sgwb_component_names]
+        if self.params["faster_geometry"]:
+            calculate_response_functions(self.fdata, self.tsegmid, submodels_sgwb, self.params, plot_flag=True)
+        else:
+            fast_rx = fast_geometry(self.params)
+            fast_rx.calculate_response_functions(f0_data,self.tsegmid,submodels_sgwb,self.params['tdi_lev'],plot_flag=True)
+            ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+            del fast_rx        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
         return
     
     def compute_inj_fdata_spectra(self):

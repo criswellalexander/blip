@@ -1,19 +1,18 @@
 from dataclasses import dataclass
+from enum import Enum
 import configparser
 
-# FIXME remove the imports below (avoid shotgun parsing i.e. acting on configs
-# before we even know if they are valid)
 import numpy as np
 import pickle
 
-# TODO move the validation of model specifiers from submodel.__init__() to here.
-
 from blip.src.makeLISAdata import (
-    sgwb_splice_parameters,
-    time_frequency_parameters,
-    sgwb_inj_length,
-    time_frequency_length,
+    get_simulation_tf_grid,
+    get_data_tf_grid,
+    get_simulation_length,
+    get_data_length,
 )
+from blip.src.submodel import SubmodelKind, SubmodelSpec
+from blip.src.utils import catch_duplicates
 
 
 @dataclass
@@ -134,6 +133,7 @@ SECTION_PARAMS = [
     ),
     Option("lmax", desc="spherical harmonic lmax for the b_lms (a_lmax/2)"),
     Option("hierarchy", desc="FIXME: doesn't do anything!"),
+    Option("faster_geometry", desc="Enable new response module", default="false")
 ]
 
 SECTION_INJ = [
@@ -439,35 +439,40 @@ def parse_config(paramsfile: str, resume: bool):
         print(
             "This may lead to unexpected prior behavior, as the prior bounds are based on a reference frequency of 1 mHz!"
         )
+    params["faster_geometry"] = config_params.getboolean("faster_geometry")
 
-    params["model"] = str(config_params["model"])
+    # params["model"] will be a list[SubmodelAnalysisSpec] and depends on the injections
+    # because of aliasing. We postpone that parsing until the injections have been parsed.
+    params["model_raw"] = str(config_params["model"])
 
     ## precompute time-frequency alignment
-    params["nsegs"], params["Nperseg"] = time_frequency_parameters(
+    params["nsegs"], params["Nperseg"] = get_data_tf_grid(
         params["dur"], params["seglen"], params["fs"]
     )
 
     ## make sure alignment is possible for `tser2fser()`
-    N_from_duration = int((params["dur"]) * params["fs"])
-    N_from_time_frequency = time_frequency_length(
+    # FIXME BLIP should just trim the data for alignment
+    Ndata_from_duration = int((params["dur"]) * params["fs"])
+    Ndata_from_alignment = get_data_length(
         params["dur"], params["seglen"], params["fs"]
     )
     assert (
-        N_from_duration % params["Nperseg"] == 0
+        Ndata_from_duration % params["Nperseg"] == 0
     ), f"""Data duration misaligned with segment length
-        {N_from_duration = }, {N_from_time_frequency = }
+        {Ndata_from_duration = }, {Ndata_from_alignment = }
         duration = {params['dur']}, nsegs = {params['nsegs']}
         seglen = {params['seglen']}, Nperseg = {params['Nperseg']}
-        {N_from_duration % params['Nperseg'] = }"""
+        {Ndata_from_duration % params['Nperseg'] = }"""
 
     ## get the model fixed values, passed as a dict
     fixedvals = eval(str(config_params["fixedvals"]))
+    # TODO check that the fixedvals make sense
 
     params["fixedvals"] = {}
     if fixedvals is not None:
         ## enforce that the keys of the fixedvals dict correspond to the desired models
         ## at this point we will only make sure that all the keys are in the model string
-        submodel_names = params["model"].split("+")
+        submodel_names = params["model_raw"].split("+")
         if not np.all([key in submodel_names for key in fixedvals.keys()]):
             raise ValueError(
                 "Fixedvals dictionary has an invalid key. Fixedvals must be provided as a nested dictionary with top-level keys corresponding to the models specified in the 'model' parameter."
@@ -489,6 +494,13 @@ def parse_config(paramsfile: str, resume: bool):
                     ]
 
     params["alias"] = eval(config_params["alias"])
+    if not isinstance(params["alias"], dict):
+        raise ValueError("alias must be dict")
+    for k, v in params["alias"].items():
+        if not isinstance(k, str):
+            raise ValueError("alias keys must be strings")
+        if not isinstance(v, str):
+            raise ValueError("alias values must be strings")
 
     params["tdi_lev"] = config_params["tdi_lev"]
     params["lisa_config"] = config_params["lisa_config"]
@@ -498,7 +510,8 @@ def parse_config(paramsfile: str, resume: bool):
 
     ## see if we need to initialize the spherical harmonic subroutines
     sph_check = [
-        sublist.split("-")[0].split("_")[-1] for sublist in params["model"].split("+")
+        sublist.split("-")[0].split("_")[-1]
+        for sublist in params["model_raw"].split("+")
     ]
 
     # Injection Dict
@@ -556,36 +569,65 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
-            ## precompute SGWB injection alignment info
+            ## precompute injection TF grid params
             (
                 params["tsplice"],
                 params["nsplice"],
                 params["tsegmid"],
                 params["Npersplice"],
-            ) = sgwb_splice_parameters(params["dur"], params["tstart"], params["fs"])
+            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"])
 
-            ## make sure alignment is possible for `add_sgwb_data()`
-            N_from_sgwb_splices = sgwb_inj_length(
+            ## make sure the simulation will generate enough data
+            # FIXME this should just be impossible i.e. BLIP should always generate
+            # enough data
+            Nsim_from_alignement = get_simulation_length(
                 params["dur"], params["tstart"], params["fs"]
             )
             assert (
-                N_from_duration == N_from_sgwb_splices
-            ), f"""Data duration misaligned with SGWB injection
+                Ndata_from_duration <= Nsim_from_alignement
+            ), f"""Simulation will be too short compared to data
                 tsplice = {params['tsplice']}, nsplice = {params['nsplice']},
                 tsegmid = {params['tsegmid']}, Npersplice = {params['Npersplice']}"""
 
-            inj["injection"] = config_inj["injection"]
+            truevals_raw = eval(config_inj["truevals"])
+            if not isinstance(truevals_raw, dict):
+                raise ValueError("truevals must be dictionary")
+            for k, v in truevals_raw.items():
+                if not isinstance(k, str):
+                    raise ValueError("truevals keys must be strings")
+                if not isinstance(v, dict):
+                    raise ValueError("truevals values must be dictionaries")
 
-            ## get the injection basis
+            # inj["truevals"] will be built later with a little pre-processing and renaming.
+            inj["truevals_raw"] = truevals_raw
+            inj["truevals"] = preprocess_truevals(truevals_raw)
+
+            inj["injection_raw"] = config_inj["injection"]
+            inj["injection"] = parse_model_spec(
+                inj["injection_raw"],
+                is_injection=True,
+                truevals_all=inj["truevals"],
+            )
+
+            # now that we know the injections and aliases, we can parse the analysis models
+            params["model"] = parse_model_spec(
+                params["model_raw"],
+                is_injection=False,
+                truevals_all=inj["truevals"],
+                fixedvals_all=params["fixedvals"],
+                alias_all=params["alias"],
+                injection_specs=inj["injection"],
+            )
+
             inj["inj_basis"] = config_inj["inj_basis"]
 
-            ## get the injection truevals, passed as a dict
-            truevals = eval(config_inj["truevals"])
             ## enforce that the keys of the truevals dict correspond to the injected models
             ## at this point we will only make sure that all the keys are in the injection string
             ## (not all injections will have truevals; e.g., population injections)
-            inj_component_names = inj["injection"].split("+")
-            if not np.all([key in inj_component_names for key in truevals.keys()]):
+            inj_component_names = inj["injection_raw"].split("+")
+            if not np.all(
+                [key in inj_component_names for key in inj["truevals"].keys()]
+            ):
                 raise ValueError(
                     "Truevals dictionary has an invalid key. Truevals must be provided as a nested dictionary with top-level keys corresponding to the injections specified in the 'injection' parameter."
                 )
@@ -622,27 +664,10 @@ def parse_config(paramsfile: str, resume: bool):
             else:
                 inj["inj_nthread"] = 1
 
-            ## build the truevals dict
-            ## some quantities we want to use as log values, so convert them
-            inj["truevals"] = {}
-            log_list = ["Np", "Na", "omega0", "fbreak", "fcut", "fscale"]
-            for component_name in truevals.keys():
-                inj["truevals"][component_name] = {}
-                for name in truevals[component_name].keys():
-                    if name in log_list:
-                        new_name = "log_" + name
-                        inj["truevals"][component_name][new_name] = np.log10(
-                            truevals[component_name][name]
-                        )
-                    else:
-                        inj["truevals"][component_name][name] = truevals[
-                            component_name
-                        ][name]
-
         ## add injections to the spherical harmonic check if needed
         sph_check = sph_check + [
             sublist.split("-")[0].split("_")[-1]
-            for sublist in inj["injection"].split("+")
+            for sublist in inj["injection_raw"].split("+")
         ]
 
     ## pop out to set sph flags
@@ -671,7 +696,7 @@ def parse_config(paramsfile: str, resume: bool):
             "population"
             in [
                 sublist.split("-")[0].split("_")[0]
-                for sublist in inj["injection"].split("+")
+                for sublist in inj["injection_raw"].split("+")
             ]
         )
 
@@ -841,3 +866,141 @@ def parse_config(paramsfile: str, resume: bool):
         misc["randst"] = None
 
     return params, inj, misc
+
+
+def parse_model_spec(
+    specs: str,
+    *,
+    is_injection: bool,
+    truevals_all: dict,
+    fixedvals_all: dict | None = None,
+    alias_all: dict | None = None,
+    injection_specs: list[SubmodelSpec] | None = None,
+) -> list[SubmodelSpec]:
+    """Parse a model specifier string into its component submodels.
+
+    Parameters
+    ----------
+    specs : str
+        model specifier string, with submodels separated by "+" and no spaces.
+    is_injection : bool
+        if True, parse this as an injection model. This will ignore the parameters alias_all and injection_specs, since
+        the injections cannot be aliased to anything.
+    truevals_all : dict
+        the truevals dictionary in the config params, specifying injected values. Not checked for correctness (this is
+        for now the job of submodel.__init__).
+    fixedvals_all : dict | None, optional
+        the fixedvals dictionary in the config params, specifying parameters to hold fixed in likelihood evaluation.
+        Ignored if is_injection=True.
+    alias_all : dict | None, optional
+        the alias dictionary in the config params. Ignored if is_injection=True.
+    injection_specs : list[SubmodelSpec] | None, optional
+        the already-parsed specifiers for the injection submodels. Required to correctly parse the analysis model.
+        Ignored if is_injection=True.
+
+    Returns
+    -------
+    list[SubmodelSpec]
+        The specifications to build the submodels.
+
+    Raises
+    ------
+    ValueError
+        If the model specifier string contains invalid syntax.
+    """
+    raw_names = specs.split("+")
+    raw_names = catch_duplicates(raw_names)
+
+    submodel_specs = []
+    for raw_name in raw_names:
+        if raw_names.count(raw_name) > 1:
+            raise ValueError(f"Duplicate model '{raw_name}'")
+
+        invalid_err = ValueError(f"Invalid injection submodel specifier '{raw_name}'")
+
+        ## remove the duplicate identifier if needed (powerlaw_isgwb-3 -> powerlaw_isgwb)
+        name_split = raw_name.split("-")
+        if len(name_split) > 2:
+            raise invalid_err
+
+        name = name_split[0]
+        if len(name_split) == 2:
+            count = f"({name_split[1]})"
+        else:
+            count = ""
+
+        is_noise = name in ["noise", "fixednoise"]
+        if is_noise and count != "":
+            raise invalid_err
+
+        is_population = name == "population"
+
+        if is_noise:
+            kind = SubmodelKind.NOISE
+            spectral, spatial = None, None
+        elif is_population:
+            kind = SubmodelKind.POPULATION
+            spectral, spatial = "population", "population"
+        else:
+            kind = SubmodelKind.SPECTRAL_SPATIAL
+
+            name_split = name.split("_")
+            if len(name_split) != 2:
+                raise invalid_err
+            spectral, spatial = name_split
+
+        truevals = {}
+        if raw_name in truevals_all:
+            truevals: dict = truevals_all[raw_name]
+
+        if is_injection:
+            fixedvals = {}
+            alias = None
+        else:
+            fixedvals = {}
+            if raw_name in fixedvals_all:
+                fixedvals: dict = fixedvals_all[raw_name]
+
+            alias = None
+            truevals = {}
+            if raw_name in alias_all:
+                alias: str = alias_all[raw_name]
+                for injspec in injection_specs:
+                    if injspec.raw_name == alias:
+                        truevals = injspec.truevals
+                        break
+
+        spec = SubmodelSpec(
+            name=name,
+            kind=kind,
+            is_injection=is_injection,
+            spectral=spectral,
+            spatial=spatial,
+            count=count,
+            raw_name=raw_name,
+            truevals=truevals,
+            fixedvals=fixedvals,
+            alias=alias,
+        )
+        submodel_specs.append(spec)
+
+    catch_duplicates(raw_names)
+
+    return submodel_specs
+
+
+def preprocess_truevals(tv_raw):
+    ## some quantities we want to use as log values, so convert them
+    truevals = {}
+    log_list = ["Np", "Na", "omega0", "fbreak", "fcut", "fscale"]
+    for component_name in tv_raw.keys():
+        truevals[component_name] = {}
+        for name in tv_raw[component_name].keys():
+            if name in log_list:
+                new_name = "log_" + name
+                truevals[component_name][new_name] = np.log10(
+                    tv_raw[component_name][name]
+                )
+            else:
+                truevals[component_name][name] = tv_raw[component_name][name]
+    return truevals

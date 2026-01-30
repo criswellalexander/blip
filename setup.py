@@ -24,7 +24,7 @@ setup(
         "numpy>=2.0,<2.4",
         "matplotlib",
         "healpy",
-        "scipy",
+        "scipy<1.17",  # need deprecated scipy.special.sph_harm
         "astropy",
         "pandas",
         "corner",
@@ -35,8 +35,9 @@ setup(
         "emcee",
         "numpyro",
         "jax",
-        "pytest",
-        "h5py"
+        "chex",
+        "lisaorbits>=3.0",
+        "h5py",
     ],
     extras_require={
             "gpu":["jax[cuda12]"]},

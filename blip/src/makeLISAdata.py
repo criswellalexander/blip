@@ -12,41 +12,117 @@ from blip.src.models import Injection
 
 jaxconfig.update("jax_enable_x64", True)
 
-def sgwb_splice_parameters(dur, tstart, fs):
+
+def get_simulation_tf_grid(dur, tstart, fs):
+    """Compute time-frequency grid parameters used for simulation.
+
+    Parameters
+    ----------
+    dur : float
+        total data duration in seconds, as set by the :confval:`duration` parameter.
+    tstart : float
+        starting time in seconds.
+    fs : float
+        data sampling rate in Hz. Inverse of dt.
+
+    Returns
+    -------
+    float
+        tsplice: splice segment duration
+    int
+        nsplice: number of splices
+    array (nsplice,)
+        tsegmid: array of mid-splice times
+    int
+        Npersplice: number of time-domain points in splice segment
+
+    See also
+    --------
+    :ref:`devguide-timefreq`
     """
-    Compute (tsplice, nsplice, tsegmid, Npersplice),
-    parameters used for building SGWB injections.
-    """
-    ## define the splice segment duration
+    # currently a constant, will be a parameter later
     tsplice = 1e4
-    ## the segments to be splices are half-overlapping
+    # the segments to be splices are half-overlapping
     nsplice = 2 * int(dur / tsplice) + 1
-    ## arrays of segmnent start and mid times
     tsegmid = tstart + (tsplice / 2.0) * np.arange(nsplice) + (tsplice / 2.0)
-    ## Number of time-domain points in a splice segment
     Npersplice = int(fs * tsplice)
 
     return tsplice, nsplice, tsegmid, Npersplice
 
 
-def sgwb_inj_length(dur, tstart, fs):
+def get_simulation_length(dur, tstart, fs):
+    """Compute simulation array length.
+
+    This is the size of the array produced by :meth:`LISAdata.add_sgwb_data`.
+
+    Parameters
+    ----------
+    dur : float
+        total data duration in seconds, as set by the :confval:`duration` parameter.
+    tstart : float
+        starting time in seconds.
+    fs : float
+        data sampling rate in Hz. Inverse of dt.
+
+    Returns
+    -------
+    int
+        length of simulation arrays.
     """
-    Compute the length of a SGWB injection.
-    """
-    _, nsplice, _, Npersplice = sgwb_splice_parameters(dur, tstart, fs)
+    _, nsplice, _, Npersplice = get_simulation_tf_grid(dur, tstart, fs)
     halfNpersplice = int(0.5 * Npersplice)
     return Npersplice + (nsplice - 3) * halfNpersplice
 
 
-def time_frequency_parameters(dur, seglen, fs):
-    "Return (nsegs, Nperseg) parameters used in tser2fser()."
+def get_data_tf_grid(dur, seglen, fs):
+    """Compute time-frequency grid parameters used for data analysis.
+
+    Parameters
+    ----------
+    dur : float
+        total data duration in seconds, as set by the :confval:`duration` parameter.
+    seglen : float
+        segment length set by :confval:`seglen`.
+    fs : float
+        data sampling rate in Hz. Inverse of dt.
+
+    Returns
+    -------
+    int
+        nsegs: number of (overlapping) segments
+    int
+        Nperseg: number of time-domain points in each segment
+
+    See also
+    --------
+    :ref:`devguide-timefreq`
+    """
     nsegs = int(np.floor(dur / seglen)) - 1
     Nperseg = int(fs * seglen)
     return nsegs, Nperseg
 
-def time_frequency_length(dur, seglen, fs):
-    "Return length of data for alignment with segments in tser2fser()."
-    nsegs, Nperseg = time_frequency_parameters(dur, seglen, fs)
+
+def get_data_length(dur, seglen, fs):
+    """Compute data array length.
+
+    The data is required to have this length, aligned with segment sizes, for use in
+    :meth:`LISAdata.tser2fser`.
+
+    Parameters
+    ----------
+    dur : float
+        total data duration in seconds, as set by the :confval:`duration` parameter.
+    seglen : float
+        segment length set by :confval:`seglen`.
+    fs : float
+        data sampling rate in Hz. Inverse of dt.
+
+    Returns
+    -------
+    int
+        length of analysis data array.
+    """
+    nsegs, Nperseg = get_data_tf_grid(dur, seglen, fs)
     return nsegs * Nperseg
 
 
@@ -146,7 +222,7 @@ class LISAdata():
 
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
-        for ii in tqdm(range(self.injection.nsplice)):
+        for ii in tqdm(range(self.injection.nsplice), desc=injmodel.name, unit="splice"):
             ## move frequency to be the zeroth-axis, then cholesky decomp
             ## this sometimes breaks on GPU for unclear reasons, hence the try/except
             try:
@@ -156,8 +232,15 @@ class LISAdata():
 
             ## generate standard normal complex data first
             if self.gpu:
-                _, jax_key, jax_key_2 = jax.random.split(jax_key,3) ## needed to actually produce a new set of random numbers every time through the loop!
-                z_norm = jax.random.normal(jax_key,shape=(self.injection.frange.size, 3)) + 1j * jax.random.normal(jax_key_2,shape=(self.injection.frange.size, 3))
+                # Only the subkeys are used in the PRNG, and deleted to prevent reuse.
+                # The main key is only split.
+                jax_key, subkey1, subkey2 = jax.random.split(jax_key, 3)
+                z_norm = jax.random.normal(
+                    subkey1, shape=(self.injection.frange.size, 3)
+                ) + 1j * jax.random.normal(
+                    subkey2, shape=(self.injection.frange.size, 3)
+                )
+                del subkey1, subkey2
             else:
                 z_norm = numpy_rng.normal(size=(self.injection.frange.size, 3)) + 1j * numpy_rng.normal(size=(self.injection.frange.size, 3))
 
