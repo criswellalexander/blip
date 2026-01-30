@@ -26,6 +26,7 @@ The input parameters given in the :ref:`configuration <config>` by the user are 
 using :func:`parse_config <blip.config.parse_config>` and passed around in BLIP as the
 ubiquitous dictionaries named ``params`` and ``inj``.
 
+.. _devguide-timefreq:
 
 Time-frequency grids
 --------------------

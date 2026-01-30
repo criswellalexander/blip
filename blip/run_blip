@@ -117,7 +117,7 @@ class LISA(LISAdata, Model):
         to generate data. Return Frequency domain data.
         '''
 
-        # SGWB generation parameters precomputed during configuration parsing
+        # Simulation time-frequency grid precomputed during configuration parsing
         nsplice = self.params["nsplice"]
         tsegmid = self.params["tsegmid"]
         Npersplice = self.params["Npersplice"]

@@ -2,16 +2,14 @@ from dataclasses import dataclass
 from enum import Enum
 import configparser
 
-# FIXME remove the imports below (avoid shotgun parsing i.e. acting on configs
-# before we even know if they are valid)
 import numpy as np
 import pickle
 
 from blip.src.makeLISAdata import (
-    sgwb_splice_parameters,
-    time_frequency_parameters,
-    sgwb_inj_length,
-    time_frequency_length,
+    get_simulation_tf_grid,
+    get_data_tf_grid,
+    get_simulation_length,
+    get_data_length,
 )
 from blip.src.submodel import SubmodelKind, SubmodelSpec
 from blip.src.utils import catch_duplicates
@@ -448,22 +446,23 @@ def parse_config(paramsfile: str, resume: bool):
     params["model_raw"] = str(config_params["model"])
 
     ## precompute time-frequency alignment
-    params["nsegs"], params["Nperseg"] = time_frequency_parameters(
+    params["nsegs"], params["Nperseg"] = get_data_tf_grid(
         params["dur"], params["seglen"], params["fs"]
     )
 
     ## make sure alignment is possible for `tser2fser()`
-    N_from_duration = int((params["dur"]) * params["fs"])
-    N_from_time_frequency = time_frequency_length(
+    # FIXME BLIP should just trim the data for alignment
+    Ndata_from_duration = int((params["dur"]) * params["fs"])
+    Ndata_from_alignment = get_data_length(
         params["dur"], params["seglen"], params["fs"]
     )
     assert (
-        N_from_duration % params["Nperseg"] == 0
+        Ndata_from_duration % params["Nperseg"] == 0
     ), f"""Data duration misaligned with segment length
-        {N_from_duration = }, {N_from_time_frequency = }
+        {Ndata_from_duration = }, {Ndata_from_alignment = }
         duration = {params['dur']}, nsegs = {params['nsegs']}
         seglen = {params['seglen']}, Nperseg = {params['Nperseg']}
-        {N_from_duration % params['Nperseg'] = }"""
+        {Ndata_from_duration % params['Nperseg'] = }"""
 
     ## get the model fixed values, passed as a dict
     fixedvals = eval(str(config_params["fixedvals"]))
@@ -570,21 +569,23 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
-            ## precompute SGWB injection alignment info
+            ## precompute injection TF grid params
             (
                 params["tsplice"],
                 params["nsplice"],
                 params["tsegmid"],
                 params["Npersplice"],
-            ) = sgwb_splice_parameters(params["dur"], params["tstart"], params["fs"])
+            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"])
 
-            ## make sure alignment is possible for `add_sgwb_data()`
-            N_from_sgwb_splices = sgwb_inj_length(
+            ## make sure the simulation will generate enough data
+            # FIXME this should just be impossible i.e. BLIP should always generate
+            # enough data
+            Nsim_from_alignement = get_simulation_length(
                 params["dur"], params["tstart"], params["fs"]
             )
             assert (
-                N_from_duration == N_from_sgwb_splices
-            ), f"""Data duration misaligned with SGWB injection
+                Ndata_from_duration <= Nsim_from_alignement
+            ), f"""Simulation will be too short compared to data
                 tsplice = {params['tsplice']}, nsplice = {params['nsplice']},
                 tsegmid = {params['tsegmid']}, Npersplice = {params['Npersplice']}"""
 
