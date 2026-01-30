@@ -17,6 +17,8 @@ from blip.src.faster_geometry import (
 from blip.config import parse_config
 from blip.src.submodel import submodel, SubmodelKind
 
+jax.config.update("jax_enable_x64", True)
+
 
 @pytest.fixture
 def times():
@@ -106,6 +108,19 @@ def test_response(response):
         for c2 in range(3):
             # hermitean
             assert jnp.allclose(response[c1, c2], response[c2, c1].conj())
+
+def test_low_freq_limit():
+    t0 = 0.0
+    f0 = 1e-5
+    orbits = compute_orbits(jnp.array([t0]))
+    allsky = all_unit_vecs_healpix(nside=8)
+    mru_vec = jit(vmap(mich_response_unconvolved, (None, None, 0, None)))
+    response = mru_vec(t0, f0, allsky, orbits)
+    chex.assert_shape(response, (allsky.shape[0], 3, 3))
+
+    # normalization: sky- and polarization-average should be 3/20 in low-freq limit
+    for c in range(3):
+        assert jnp.allclose(response[:, c, c].mean(), 3/20, atol=1e-4)
 
 
 def test_calculate_response_functions(config):
