@@ -21,7 +21,7 @@ setup(
     package_dir={"blip":"blip"},
     scripts=["blip/run_blip"],
     install_requires=[
-        "numpy>=2.0",
+        "numpy>=2.0,<2.4",
         "matplotlib",
         "healpy",
         "scipy<1.17",  # need deprecated scipy.special.sph_harm
