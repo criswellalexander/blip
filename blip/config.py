@@ -133,7 +133,7 @@ SECTION_PARAMS = [
     ),
     Option("lmax", desc="spherical harmonic lmax for the b_lms (a_lmax/2)"),
     Option("hierarchy", desc="FIXME: doesn't do anything!"),
-    Option("faster_geometry", desc="Enable new response module", default="false")
+    Option("faster_geometry", desc="Enable new response module", default="false"),
 ]
 
 SECTION_INJ = [
@@ -609,16 +609,6 @@ def parse_config(paramsfile: str, resume: bool):
                 truevals_all=inj["truevals"],
             )
 
-            # now that we know the injections and aliases, we can parse the analysis models
-            params["model"] = parse_model_spec(
-                params["model_raw"],
-                is_injection=False,
-                truevals_all=inj["truevals"],
-                fixedvals_all=params["fixedvals"],
-                alias_all=params["alias"],
-                injection_specs=inj["injection"],
-            )
-
             inj["inj_basis"] = config_inj["inj_basis"]
 
             ## enforce that the keys of the truevals dict correspond to the injected models
@@ -669,6 +659,19 @@ def parse_config(paramsfile: str, resume: bool):
             sublist.split("-")[0].split("_")[-1]
             for sublist in inj["injection_raw"].split("+")
         ]
+
+    # now that we know the injections and aliases, we can parse the analysis models
+    _truevals_all = inj.get("truevals", {})
+    _fixedvals_all = params.get("fixedvals", {})
+    _injection_specs = inj.get("injection", [])
+    params["model"] = parse_model_spec(
+        params["model_raw"],
+        is_injection=False,
+        truevals_all=_truevals_all,
+        fixedvals_all=_fixedvals_all,
+        alias_all=params["alias"],
+        injection_specs=_injection_specs,
+    )
 
     ## pop out to set sph flags
     params["sph_flag"] = "sph" in sph_check  # or ('hierarchical' in sph_check)
