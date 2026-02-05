@@ -13,7 +13,7 @@ from blip.src.models import Injection
 jaxconfig.update("jax_enable_x64", True)
 
 
-def get_simulation_tf_grid(dur, tstart, fs):
+def get_simulation_tf_grid(dur, tstart, fs, tsplice):
     """Compute time-frequency grid parameters used for simulation.
 
     Parameters
@@ -24,11 +24,11 @@ def get_simulation_tf_grid(dur, tstart, fs):
         starting time in seconds.
     fs : float
         data sampling rate in Hz. Inverse of dt.
+    tsplice : float
+        Splice segment length in seconds.
 
     Returns
     -------
-    float
-        tsplice: splice segment duration
     int
         nsplice: number of splices
     array (nsplice,)
@@ -40,8 +40,6 @@ def get_simulation_tf_grid(dur, tstart, fs):
     --------
     :ref:`devguide-timefreq`
     """
-    # currently a constant, will be a parameter later
-    tsplice = 1e4
     # the segments to be splices are half-overlapping
     nsplice = 2 * int(dur / tsplice) + 1
     tsegmid = tstart + (tsplice / 2.0) * np.arange(nsplice) + (tsplice / 2.0)
@@ -50,7 +48,7 @@ def get_simulation_tf_grid(dur, tstart, fs):
     return tsplice, nsplice, tsegmid, Npersplice
 
 
-def get_simulation_length(dur, tstart, fs):
+def get_simulation_length(dur, tstart, fs, tsplice):
     """Compute simulation array length.
 
     This is the size of the array produced by :meth:`LISAdata.add_sgwb_data`.
@@ -63,13 +61,15 @@ def get_simulation_length(dur, tstart, fs):
         starting time in seconds.
     fs : float
         data sampling rate in Hz. Inverse of dt.
+    tsplice : float
+        Splice segment length in seconds.
 
     Returns
     -------
     int
         length of simulation arrays.
     """
-    _, nsplice, _, Npersplice = get_simulation_tf_grid(dur, tstart, fs)
+    _, nsplice, _, Npersplice = get_simulation_tf_grid(dur, tstart, fs, tsplice)
     halfNpersplice = int(0.5 * Npersplice)
     return Npersplice + (nsplice - 3) * halfNpersplice
 

@@ -39,10 +39,17 @@ SECTION_PARAMS = [
     Option(
         "seglen",
         desc="""
-            Segment length for fft in seconds, should be compatiable with fmin.
+            Segment length for the analysis STFT fft in seconds, should be compatiable with fmin.
             Note by SB: Looks like this needs to be at least a factor of 10 larger
             than 1/fmin to give consistant recoveries.""",
         default="1e5",
+    ),
+    Option(
+        "tsplice",
+        desc="""
+             Splice length for the simulation in seconds, should be compatiable with fmin.
+             """,
+        default="2.5e4",
     ),
     Option(
         "fs",
@@ -415,6 +422,10 @@ def parse_config(paramsfile: str, resume: bool):
     assert (
         params["seglen"] >= 10 / params["fmin"]
     ), "Segment length incompatible with fmin"
+    params["tsplice"] = float(config_params["tsplice"])
+    assert (
+        params["tsplice"] > 1 / params["fmin"]
+    ), "Splice length incompatible with fmin"
     params["fs"] = float(config_params["fs"])
     assert params["fs"] >= 4 * params["fmax"], "Sampling rate fs incompatible with fmax"
     params["Shfile"] = config_params["Shfile"]
