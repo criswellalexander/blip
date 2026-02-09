@@ -9,12 +9,9 @@ class clebschGordan():
     Class with methods for manipulating clebsch-gordon coeffcients.
     '''
 
-    # FIXME uninitialized self.injection, self.inj, self.params
-    def __init__(self):
-        if self.injection:
-            self.blmax = self.inj['inj_lmax']
-        else:
-            self.blmax = self.params['lmax']
+    def __init__(self,blmax):
+
+        self.blmax = blmax
         self.almax = 2*self.blmax
 
         ## size of arrays: for blms its only non-negative m values but for alms it is all of them
@@ -149,7 +146,7 @@ class clebschGordan():
         ## counter for blm_vals
         cnt = 0
 
-        for lval in range(1, self.params['lmax'] + 1):
+        for lval in range(1, self.blmax + 1):
             for mval in range(lval + 1):
 
                 idx = Alm.getidx(self.blmax, lval, mval)

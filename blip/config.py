@@ -586,13 +586,13 @@ def parse_config(paramsfile: str, resume: bool):
                 params["nsplice"],
                 params["tsegmid"],
                 params["Npersplice"],
-            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"])
+            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"], params["tsplice"])
 
             ## make sure the simulation will generate enough data
             # FIXME this should just be impossible i.e. BLIP should always generate
             # enough data
             Nsim_from_alignement = get_simulation_length(
-                params["dur"], params["tstart"], params["fs"]
+                params["dur"], params["tstart"], params["fs"], params["tsplice"]
             )
             assert (
                 Ndata_from_duration <= Nsim_from_alignement
@@ -684,8 +684,9 @@ def parse_config(paramsfile: str, resume: bool):
     ## pop out to set sph flags
     params["sph_flag"] = "sph" in sph_check  # or ('hierarchical' in sph_check)
     ## set sph flag to false if both inj and model basis are pixel
-    # FIXME what is the correct logic here when no injection is used?
-    if params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
+    if params["sph_flag"]:
+        params["lmax"] = int(config_params["lmax"])
+    elif params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
         params["sph_flag"] = True
         params["lmax"] = int(config_params["lmax"])
 
