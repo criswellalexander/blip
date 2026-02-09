@@ -133,7 +133,7 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
                     Omega_1mHz = sm.omegaf(1e-3,*post_i[ii,:])
                     omega_map = omega_map + Omega_1mHz * norm_map
             
-            elif hasattr(sm,"parameterized_map") and sm.parameterized_map:
+            elif hasattr(sm,"parameterized_map") and sm.parameterized_map and not sm.basis=='sph':
                 ## for analyses with explicitly parameterized sky distributions (i.e. parameterized but not the more generic sph. harm. model)
                 print("Computing marginalized posterior skymap for submodel: {}...".format(submodel_name))
                 skip_median = False
@@ -207,7 +207,7 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
                 # median values of the posteriors
                 med_vals = np.median(post_i, axis=0)
 
-                if hasattr(sm,"parameterized_map") and sm.parameterized_map:
+                if hasattr(sm,"parameterized_map") and sm.parameterized_map and not sm.basis=='sph':
                     ## explicitly parameterized spatial analyses
                     ## get Omega(f=1mHz)
                     Omega_1mHz_median = sm.omegaf(1e-3,*med_vals[:sm.spatial_start])

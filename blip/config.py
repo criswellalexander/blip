@@ -39,10 +39,17 @@ SECTION_PARAMS = [
     Option(
         "seglen",
         desc="""
-            Segment length for fft in seconds, should be compatiable with fmin.
+            Segment length for the analysis STFT fft in seconds, should be compatiable with fmin.
             Note by SB: Looks like this needs to be at least a factor of 10 larger
             than 1/fmin to give consistant recoveries.""",
         default="1e5",
+    ),
+    Option(
+        "tsplice",
+        desc="""
+             Splice length for the simulation in seconds, should be compatiable with fmin.
+             """,
+        default="2.5e4",
     ),
     Option(
         "fs",
@@ -415,6 +422,10 @@ def parse_config(paramsfile: str, resume: bool):
     assert (
         params["seglen"] >= 10 / params["fmin"]
     ), "Segment length incompatible with fmin"
+    params["tsplice"] = float(config_params["tsplice"])
+    assert (
+        params["tsplice"] > 1 / params["fmin"]
+    ), "Splice length incompatible with fmin"
     params["fs"] = float(config_params["fs"])
     assert params["fs"] >= 4 * params["fmax"], "Sampling rate fs incompatible with fmax"
     params["Shfile"] = config_params["Shfile"]
@@ -575,13 +586,13 @@ def parse_config(paramsfile: str, resume: bool):
                 params["nsplice"],
                 params["tsegmid"],
                 params["Npersplice"],
-            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"])
+            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"], params["tsplice"])
 
             ## make sure the simulation will generate enough data
             # FIXME this should just be impossible i.e. BLIP should always generate
             # enough data
             Nsim_from_alignement = get_simulation_length(
-                params["dur"], params["tstart"], params["fs"]
+                params["dur"], params["tstart"], params["fs"], params["tsplice"]
             )
             assert (
                 Ndata_from_duration <= Nsim_from_alignement
@@ -676,8 +687,9 @@ def parse_config(paramsfile: str, resume: bool):
     ## pop out to set sph flags
     params["sph_flag"] = "sph" in sph_check  # or ('hierarchical' in sph_check)
     ## set sph flag to false if both inj and model basis are pixel
-    # FIXME what is the correct logic here when no injection is used?
-    if params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
+    if params["sph_flag"]:
+        params["lmax"] = int(config_params["lmax"])
+    elif params["model_basis"] == "sph" or inj.get("inj_basis", "sph") == "sph":
         params["sph_flag"] = True
         params["lmax"] = int(config_params["lmax"])
 

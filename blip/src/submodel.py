@@ -109,8 +109,13 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         self.tsegmid = tsegmid
         self.time_dim = tsegmid.size
         self.injection = injection
-        # FIXME geometry is not a parent class. What is going on here?
-        geometry.__init__(self, params, inj, injection)
+
+        if 'lmax' in params.keys() and not injection:
+            clebschGordan.__init__(self,params['lmax'])
+        elif 'inj_lmax' in inj.keys() and injection:
+            clebschGordan.__init__(self,inj['inj_lmax'])
+        elif 'inj_lmax' not in inj.keys() and 'lmax' in params.keys() and injection:
+            clebschGordan.__init__(self,params['lmax'])
 
         self.name = spec.raw_name
         self.kind = spec.kind
@@ -121,6 +126,11 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         self.truevals = {}  # truevals keys will be processed and renamed case-by-case
         self.fixedvals = spec.fixedvals
         self.alias = spec.alias
+
+        ## set some preliminary flags; these may get overwritten later
+        self.has_map = False
+        self.parameterized_map = False
+
 
         submodel_count = spec.count
 
@@ -536,6 +546,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
             if not injection:
                 self.fixed_map = False
+                self.parameterized_map = True
                 ## set sph indices
                 self.blm_m0_idx = []
                 self.blm_amp_idx = []
@@ -562,7 +573,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                     self.truevals[param] = val
 
                 ## get alms
-                self.alms_inj = np.array(self.compute_skymap_alms(self.injvals['blms']).tolist())
+                self.alms_inj = np.array(self.compute_skymap_alms(val_list).tolist())
                 ## get sph basis skymap
                 self.sph_skymap =  hp.alm2map(self.alms_inj[0:hp.Alm.getsize(self.almax)],self.params['nside'])
                 ## Tell the submodel how to handle the injection response matrix when it's computed later on
@@ -579,8 +590,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
             if (injection and inj['inj_basis']=='pixel') or (not injection and params['model_basis']=='pixel'):
                 basis = 'pixel'
+                self.fullsky = False
             else:
                 basis = 'sph'
+                self.fullsky = True
             self.basis = basis
 
             ## set lmax for sph case & define responses

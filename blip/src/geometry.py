@@ -954,6 +954,8 @@ class geometry(sph_geometry):
 
 
             ## Michelson antenna patterns
+            ## these are using the origin as the center of the constellation, assuming an equilateral formation
+            ## convention for sign of n (omegahat) agrees with Banagiri+21, i.e. from the GW source
             ## Calculate Fplus
             Fplus1 = 0.5*(Fplus_u*gammaU_plus - Fplus_v*gammaV_plus)*np.exp(-1j*f0[ii]*(udir + vdir)/np.sqrt(3)) 
             Fplus2 = 0.5*(Fplus_w*gammaW_plus - Fplus_u*gammaU_minus)*np.exp(-1j*f0[ii]*(-udir + vdir)/np.sqrt(3))
