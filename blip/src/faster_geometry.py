@@ -61,8 +61,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     It mirrors the functionality in fast_geometry.calculate_response_functions().
 
-    Only healpix (not spherical harmonic) responses are supported.
-
     Parameters
     ----------
     freqs : array (nfreqs,)
@@ -90,9 +88,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     Warnings
     --------
-    This code is experimental and is missing many of BLIP's functionalities. It can only
-    deal with fixed skymaps in pixel basis, for anisotropic submodels, in tdi_lev set to
-    'mich' or 'xyz'. Even the quantitative details are still subject to change.
+    This is experimental, tested only for healpix responses.
     """
 
     chex.assert_rank([freqs, times], 1)
