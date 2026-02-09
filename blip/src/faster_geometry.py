@@ -104,8 +104,10 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     if is_fullsky:
         active_pixels_idx = jnp.arange(npix)
     else:
+        mask_idx = jnp.nonzero(sm.skymap)[0]
+        # mask_idx = sm.mask_idx
         active_pixels_idx_sm = [
-            _intarray_to_set(jnp.nonzero(sm.skymap)[0])
+            _intarray_to_set(mask_idx)
             for sm in submodels
             if sm.has_map
         ]
@@ -230,16 +232,19 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                 if sm.basis == "pixel":
 
                     ## 3 x 3 x frequency x time
-                    integral = np.zeros((3, 3, nf, nt, npix))
+                    sky_size = np.sum(sm.mask_idx)
+                    integral = np.zeros((3, 3, nf, nt, sky_size))
                     postf_dims = 2  ## time x npix
 
                     ## loop over pixels, interpolating the response as we go
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
-                        response = _interpolate(response_sparse)
-                        integral[..., i] = response
+                        if i in sm.mask_idx:
+                            response = _interpolate(response_sparse)
+                            integral[..., i] = response
 
                 ## spherical harmonic search
                 elif sm.basis == "sph":
+
                     alm_size = (sm.almax + 1) ** 2
                     ## angular coordinates of pixel indices
                     theta, phi = hp.pix2ang(params["nside"], active_pixels_idx)
