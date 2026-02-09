@@ -519,6 +519,16 @@ def parse_config(paramsfile: str, resume: bool):
     params["model_basis"] = config_params["model_basis"]
     params["tstart"] = float(config_params["tstart"])
 
+    ## precompute injection TF grid params
+    (
+        params["tsplice"],
+        params["nsplice"],
+        params["tsegmid"],
+        params["Npersplice"],
+    ) = get_simulation_tf_grid(
+        params["dur"], params["tstart"], params["fs"], params["tsplice"]
+    )
+
     ## see if we need to initialize the spherical harmonic subroutines
     sph_check = [
         sublist.split("-")[0].split("_")[-1]
@@ -580,13 +590,6 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
-            ## precompute injection TF grid params
-            (
-                params["tsplice"],
-                params["nsplice"],
-                params["tsegmid"],
-                params["Npersplice"],
-            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"], params["tsplice"])
 
             ## make sure the simulation will generate enough data
             # FIXME this should just be impossible i.e. BLIP should always generate
