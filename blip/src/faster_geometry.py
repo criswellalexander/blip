@@ -127,17 +127,22 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     # Vectorize twice: on times and on frequencies.
     # Sky directions are done sequentially
+    ## this vectorizes on times
     _mru_vect = vmap(
         mich_response_unconvolved, (0, None, None, None), out_axes=2
     )  # (3, 3, ntimes)
+    ## this vectorizes on frequencies
     _mru_vec2 = vmap(
         _mru_vect, (None, 0, None, None), out_axes=2
     )  # (3, 3, nfreqs, ntimes)
+    ## jit the time x frequency calculation
     mru_vec2 = jit(_mru_vec2)
 
+    ## get the sparse time-frequency grid to interpolate on later
     times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
 
+    ## check runtime, memory use
     _compiled = mru_vec2.lower(
         times_sparse, freqs_sparse, active_pixels_vecs[0], orbits
     ).compile()
@@ -159,7 +164,8 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     ## However, the matrix inversions in the likelihood require double precision,
     # and the spherical harmonic search requires the complex responses.
 
-    # Loop over sky directions sequentially
+    ## Loop over sky directions sequentially, computing the per-pixel responses as we go
+    ## We only do this on pixels with power
     print("Computing LISA response functions...")
     responses_sparse = []
     for i, pix_vec in tqdm(
@@ -170,13 +176,18 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     ):
         responses_sparse.append(mru_vec2(times_sparse, freqs_sparse, pix_vec, orbits))
 
+    ## these should always be 3 x 3 x frequencies x times
     chex.assert_shape(responses_sparse[0], (3, 3, nf_s, nt_s))
     chex.assert_equal_shape(responses_sparse)
 
     # Integrate on sky for each submodel. We do this sequentially with a python for loop
     # and using plain numpy (not jax) arrays. The point of this is to avoid allocating
     # memory for the whole integrand, a large rank-5 tensor.
+
+    ## get dOmega
     dOmega = 4*np.pi / npix
+
+    ## set up the interpolator
     _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
     _interpolate = jit(_interpolate)
     for sm in submodels:
@@ -196,6 +207,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     skymap_normalized = sm.skymap / (jnp.sum(sm.skymap) * dOmega)
 
                     ## loop over pixels, interpolating the response as we go
+                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
                         integral += skymap_normalized[i] * response * dOmega
@@ -217,6 +229,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     postf_dims = 1 ## time x Ylms
 
                     ## loop over pixels, interpolating the response as we go
+                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
                         pix_sph_sum = np.sum(Ylms[i,:]*sm.alms_inj) ## sum over Ylms for this pixel
@@ -234,6 +247,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     postf_dims = 2 ## time x npix
 
                     ## loop over pixels, interpolating the response as we go
+                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
                         integral[...,i] = response
@@ -268,12 +282,13 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             integral = np.zeros((3, 3, nf, nt))
             postf_dims = 1 ## just time
 
+            ## loop over pixels, interpolating the response as we go
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                 response = _interpolate(response_sparse)
                 integral += (1/(4*jnp.pi)) * response * dOmega
 
         else:
-            raise NotImplementedError
+            assert False ## this should never happen
 
         ## TDI
         if params["tdi_lev"] == "xyz":
