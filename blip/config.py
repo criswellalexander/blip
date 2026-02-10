@@ -140,7 +140,7 @@ SECTION_PARAMS = [
     ),
     Option("lmax", desc="spherical harmonic lmax for the b_lms (a_lmax/2)"),
     Option("hierarchy", desc="FIXME: doesn't do anything!"),
-    Option("faster_geometry", desc="Enable new response module", default="false")
+    Option("faster_geometry", desc="Enable new response module", default="false"),
 ]
 
 SECTION_INJ = [
@@ -519,6 +519,16 @@ def parse_config(paramsfile: str, resume: bool):
     params["model_basis"] = config_params["model_basis"]
     params["tstart"] = float(config_params["tstart"])
 
+    ## precompute injection TF grid params
+    (
+        params["tsplice"],
+        params["nsplice"],
+        params["tsegmid"],
+        params["Npersplice"],
+    ) = get_simulation_tf_grid(
+        params["dur"], params["tstart"], params["fs"], params["tsplice"]
+    )
+
     ## see if we need to initialize the spherical harmonic subroutines
     sph_check = [
         sublist.split("-")[0].split("_")[-1]
@@ -580,13 +590,6 @@ def parse_config(paramsfile: str, resume: bool):
 
         ## otherwise make a new one
         else:
-            ## precompute injection TF grid params
-            (
-                params["tsplice"],
-                params["nsplice"],
-                params["tsegmid"],
-                params["Npersplice"],
-            ) = get_simulation_tf_grid(params["dur"], params["tstart"], params["fs"], params["tsplice"])
 
             ## make sure the simulation will generate enough data
             # FIXME this should just be impossible i.e. BLIP should always generate
@@ -618,16 +621,6 @@ def parse_config(paramsfile: str, resume: bool):
                 inj["injection_raw"],
                 is_injection=True,
                 truevals_all=inj["truevals"],
-            )
-
-            # now that we know the injections and aliases, we can parse the analysis models
-            params["model"] = parse_model_spec(
-                params["model_raw"],
-                is_injection=False,
-                truevals_all=inj["truevals"],
-                fixedvals_all=params["fixedvals"],
-                alias_all=params["alias"],
-                injection_specs=inj["injection"],
             )
 
             inj["inj_basis"] = config_inj["inj_basis"]
@@ -680,6 +673,19 @@ def parse_config(paramsfile: str, resume: bool):
             sublist.split("-")[0].split("_")[-1]
             for sublist in inj["injection_raw"].split("+")
         ]
+
+    # now that we know the injections and aliases, we can parse the analysis models
+    _truevals_all = inj.get("truevals", {})
+    _fixedvals_all = params.get("fixedvals", {})
+    _injection_specs = inj.get("injection", [])
+    params["model"] = parse_model_spec(
+        params["model_raw"],
+        is_injection=False,
+        truevals_all=_truevals_all,
+        fixedvals_all=_fixedvals_all,
+        alias_all=params["alias"],
+        injection_specs=_injection_specs,
+    )
 
     ## pop out to set sph flags
     params["sph_flag"] = "sph" in sph_check  # or ('hierarchical' in sph_check)

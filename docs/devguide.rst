@@ -68,15 +68,18 @@ Response matrices are passed around as attributes in submodels. This is the list
 attributes currently used:
 
 1. ``response_mat``: complex array of shape ``(3, 3, nfreqs, ntimes)``, the first two
-   dimensions referring to TDI channels. The standard.
-2. ``unconvolved_response_mat``: used for parametrized spatial models, complex array of
-   shape ``(3, 3, nfreqs, ntimes, npix or nsph)``.
-3. ``fdata_response_mat``: in injection submodels, this is the same as ``response_mat``,
+   dimensions referring to TDI channels. If the submodel has a parametrized spatial
+   model, this has an additional dimension in the end which is the number of active
+   pixels for pixel models and the number of terms in the spherical harmonic expansion
+   for sph model.
+2. ``fdata_response_mat``: in injection submodels, this is the same as ``response_mat``,
    but computed on the analysis time-frequency grid rather than on the simulation grid.
    This is used for plotting injections together with analysis results. Using this
    rather than ``response_mat`` is indicated by a function parameter ``plot_flag`` in,
    e.g., :meth:`calculate_response_functions
    <blip.src.fast_geometry.fast_geometry.calculate_response_functions>`.
+3. ``unconvolved_response_mat``: deprecated, used ``response_mat`` instead. (Was used for parametrized spatial models, complex array of
+   shape ``(3, 3, nfreqs, ntimes, npix or nsph)``).
 4. ``unconvolved_fdata_response_mat``: combination of the two above.
 5. ``summ_response_mat``: deprecated, use ``response_mat`` instead.
 6. ``inj_response_mat``: deprecated, use ``response_mat`` instead.

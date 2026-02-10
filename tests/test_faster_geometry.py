@@ -109,6 +109,7 @@ def test_response(response):
             # hermitean
             assert jnp.allclose(response[c1, c2], response[c2, c1].conj())
 
+
 def test_low_freq_limit():
     t0 = 0.0
     f0 = 1e-5
@@ -120,7 +121,7 @@ def test_low_freq_limit():
 
     # normalization: sky- and polarization-average should be 3/20 in low-freq limit
     for c in range(3):
-        assert jnp.allclose(response[:, c, c].mean(), 3/20, atol=1e-4)
+        assert jnp.allclose(response[:, c, c].mean(), 3 / 20, atol=1e-4)
 
 
 def test_calculate_response_functions(config):
@@ -128,11 +129,15 @@ def test_calculate_response_functions(config):
 
     times = params["tsegmid"]
     freqs = jnp.fft.rfftfreq(params["Npersplice"], 1.0 / params["fs"])[1:]
+    ntimes = times.shape[0]
+    nfreqs = freqs.shape[0]
     f0 = freqs / (2 * FSTAR)
 
     submodels_sgwb = []
     for sm_spec in params["model"]:
-        sm = submodel(params, inj, sm_spec, freqs, f0, times, injection=True, suffix="")
+        sm = submodel(
+            params, inj, sm_spec, freqs, f0, times, injection=False, suffix=""
+        )
         if sm_spec.kind == SubmodelKind.SPECTRAL_SPATIAL:
             submodels_sgwb.append(sm)
 
@@ -141,6 +146,17 @@ def test_calculate_response_functions(config):
     for sm in submodels_sgwb:
         assert hasattr(sm, "response_mat")
         assert hasattr(sm, "inj_response_mat")
-        # fdata_response_mat will only exist if plot_flag is false
-        # assert hasattr(sm, "fdata_response_mat")
-        assert sm.response_mat.shape == (3, 3, freqs.shape[0], times.shape[0])
+        if sm.parameterized_map:
+            if sm.basis == "sph":
+                ndir = (sm.almax + 1) ** 2
+            else:
+                # TODO test this case, currently too expensive for some reason
+                assert False
+                ndir = jnp.sum(sm.mask_idx)
+            assert sm.response_mat.shape == (3, 3, nfreqs, ntimes, ndir)
+        else:
+            # fdata_response_mat will only exist if plot_flag is false
+            # assert hasattr(sm, "fdata_response_mat")
+            assert sm.response_mat.shape == (3, 3, nfreqs, ntimes)
+
+
