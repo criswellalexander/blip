@@ -721,7 +721,7 @@ def parse_config(paramsfile: str, resume: bool):
         if inj["sph_flag"]:
             try:
                 inj["inj_lmax"] = int(config_inj["inj_lmax"])
-            except configparser.NoOptionError as err:
+            except (configparser.NoOptionError, KeyError) as err:
                 if params["sph_flag"]:
                     print(
                         "Performing a spherical harmonic basis injection and inj_lmax has not been specified. Injection and recovery will use same lmax (lmax={}).".format(
