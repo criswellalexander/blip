@@ -849,7 +849,9 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None,
                 mean_def = mean_prec.format(sum_ax[1])
                 eidx = mean_def.find('e')
                 base = float(mean_def[0:eidx])
-                exponent = int(mean_def[eidx+1:])
+                _thing = float(mean_def[eidx+1:])
+                assert round(_thing) == _thing  # it is an int
+                exponent = int(_thing)
                 mean_form = str(base)
                 exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
             else:
