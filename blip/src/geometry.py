@@ -1,6 +1,5 @@
 import numpy as np
 import numpy.linalg as LA
-#from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 import healpy as hp
 from blip.src.sph_geometry import sph_geometry

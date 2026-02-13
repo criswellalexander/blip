@@ -3,7 +3,6 @@ import numpy.linalg as LA
 import jax.numpy as jnp
 #import jax.numpy.linalg as JLA
 import jax
-#from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 from jax import config
 config.update("jax_enable_x64", True)
