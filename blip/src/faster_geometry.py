@@ -107,9 +107,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         mask_idx = jnp.nonzero(sm.skymap)[0]
         # mask_idx = sm.mask_idx
         active_pixels_idx_sm = [
-            _intarray_to_set(mask_idx)
-            for sm in submodels
-            if sm.has_map
+            _intarray_to_set(mask_idx) for sm in submodels if sm.has_map
         ]
         active_pixels_idx = jnp.array(
             sorted(
@@ -125,20 +123,19 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     # Vectorize twice: on times and on frequencies.
     # Sky directions are done sequentially
-    ## this vectorizes on times
     _mru_vect = vmap(
         mich_response_unconvolved, (0, None, None, None), out_axes=2
     )  # (3, 3, ntimes)
-    ## this vectorizes on frequencies
     _mru_vec2 = vmap(
         _mru_vect, (None, 0, None, None), out_axes=2
     )  # (3, 3, nfreqs, ntimes)
-    ## jit the time x frequency calculation
     mru_vec2 = jit(_mru_vec2)
 
-    ## get the sparse time-frequency grid to interpolate on later
+    # Set up sparse grid for interpolation
     times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
+    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
+    _interpolate = jit(_interpolate)
 
     ## check runtime, memory use
     _compiled = mru_vec2.lower(
@@ -153,14 +150,14 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     # bytes accessed = 3049 bytes / time / freq / pixel
     #          flops = 1378  flop / time / freq / pixel
 
-    # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM. We assume
-    # equal and constant LTTs, so our SGWB can be perfectly described by two real
-    # series: the AA and EE time-varying PSDs. That would reduce the output from 144
-    # bytes to 16 bytes per time per frequency per pixel (9x compression). And that's
-    # still using double precision, which we don't need for the response matrix output.
-    # Using single precision we could do 144 -> 8 bytes, an 18x compression.
-    ## However, the matrix inversions in the likelihood require double precision,
-    # and the spherical harmonic search requires the complex responses.
+    # NOTE(solano) the usage of 3x3 complex matrices in our context is a waste of RAM.
+    # We assume equal and constant LTTs, so our SGWB can be perfectly described by two
+    # real series: the AA and EE time-varying PSDs. That would reduce the output from
+    # 144 bytes to 16 bytes per time per frequency per pixel (9x compression). And
+    # that's still using double precision, which we don't need for the response matrix
+    # output. Using single precision we could do 144 -> 8 bytes, an 18x compression.
+    # NOTE(awc) However, the matrix inversions in the likelihood require double
+    # precision, and the spherical harmonic search requires the complex responses.
 
     ## Loop over sky directions sequentially, computing the per-pixel responses as we go
     ## We only do this on pixels with power
@@ -174,41 +171,31 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     ):
         responses_sparse.append(mru_vec2(times_sparse, freqs_sparse, pix_vec, orbits))
 
-    ## these should always be 3 x 3 x frequencies x times
     chex.assert_shape(responses_sparse[0], (3, 3, nf_s, nt_s))
     chex.assert_equal_shape(responses_sparse)
+
+    dOmega = 4 * np.pi / npix
 
     # Integrate on sky for each submodel. We do this sequentially with a python for loop
     # and using plain numpy (not jax) arrays. The point of this is to avoid allocating
     # memory for the whole integrand, a large rank-5 tensor.
-
-    ## get dOmega
-    dOmega = 4*np.pi / npix
-
-    ## set up the interpolator
-    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
-    _interpolate = jit(_interpolate)
     for sm in submodels:
         ## models with maps
         if sm.has_map:
+            output = np.zeros((3, 3, nf, nt), dtype=complex)
+            postf_dims = 1  # nb of tensor dimensions after freqs
+
             ## models with fixed templates
             if not sm.parameterized_map:
                 if sm.basis == "pixel":
-                    ## check that the skymap has the correct number of pixels
                     chex.assert_shape(sm.skymap, (npix,))
-
-                    ## 3 x 3 x frequency x time
-                    integral = np.zeros((3, 3, nf, nt))
-                    postf_dims = 1  ## just time
 
                     ## normalize skymap such that it integrates to 1 over the sky
                     skymap_normalized = sm.skymap / (jnp.sum(sm.skymap) * dOmega)
 
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        integral += skymap_normalized[i] * response * dOmega
+                        output += skymap_normalized[i] * response * dOmega
 
                 elif sm.basis == "sph":
                     alm_size = (sm.almax + 1) ** 2
@@ -218,24 +205,15 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     ## Get the spherical harmonics
                     for ii in range(alm_size):
                         lval, mval = sm.idxtoalm(sm.almax, ii)
-                        Ylms[:, ii] = sph_harm_y(
-                            mval, lval, theta, phi
-                        )  ## theta, phi switched due to new scipy convention
+                        Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi)
                     ## check that the Ylms have the right number of pixels, sph terms
                     chex.assert_shape(Ylms, (npix, alm_size))
 
-                    ## 3 x 3 x frequency x time x Ylms
-                    integral = np.zeros((3, 3, nf, nt), dtype="complex")
-                    postf_dims = 1  ## time x Ylms
-
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        pix_sph_sum = np.sum(
-                            Ylms[i, :] * sm.alms_inj
-                        )  ## sum over Ylms for this pixel
-                        integral += pix_sph_sum * response * dOmega
+                        # from Ylms, get skymap intensity for this pixel
+                        pix_sph_sum = np.sum(Ylms[i, :] * sm.alms_inj)
+                        output += pix_sph_sum * response * dOmega
 
                 else:
                     assert False
@@ -243,22 +221,16 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             ## parameterized spatial models
             else:
                 if sm.basis == "pixel":
-
-                    ## 3 x 3 x frequency x time
                     sky_size = np.sum(sm.mask_idx)
-                    integral = np.zeros((3, 3, nf, nt, sky_size))
-                    postf_dims = 2  ## time x npix
+                    output = np.zeros((3, 3, nf, nt, sky_size), dtype=complex)
+                    postf_dims = 2  # nb of tensor dimensions after freqs
 
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         if i in sm.mask_idx:
                             response = _interpolate(response_sparse)
-                            integral[..., i] = response
+                            output[..., i] = response
 
-                ## spherical harmonic search
                 elif sm.basis == "sph":
-
                     alm_size = (sm.almax + 1) ** 2
                     ## angular coordinates of pixel indices
                     theta, phi = hp.pix2ang(params["nside"], active_pixels_idx)
@@ -266,20 +238,18 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     ## Get the spherical harmonics
                     for ii in range(alm_size):
                         lval, mval = sm.idxtoalm(sm.almax, ii)
-                        Ylms[:, ii] = sph_harm_y(
-                            mval, lval, theta, phi
-                        )  ## theta, phi switched due to new scipy convention
+                        Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi)
                     ## check that the Ylms have the right number of pixels, sph terms
                     chex.assert_shape(Ylms, (npix, alm_size))
 
                     ## 3 x 3 x frequency x time x Ylms
-                    integral = np.zeros((3, 3, nf, nt, alm_size), dtype="complex")
+                    output = np.zeros((3, 3, nf, nt, alm_size), dtype="complex")
                     postf_dims = 2  ## time x Ylms
 
                     ## loop over pixels, interpolating the response as we go
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        integral += (
+                        output += (
                             Ylms[None, None, None, None, i, :]
                             * response[..., None]
                             * dOmega
@@ -289,22 +259,22 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
         elif sm.spatial_model_name == "isgwb":
 
-            integral = np.zeros((3, 3, nf, nt))
+            output = np.zeros((3, 3, nf, nt), dtype=complex)
             postf_dims = 1  ## just time
 
             ## loop over pixels, interpolating the response as we go
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                 response = _interpolate(response_sparse)
-                integral += (1 / (4 * jnp.pi)) * response * dOmega
+                output += (1 / (4 * jnp.pi)) * response * dOmega
 
         else:
-            assert False ## this should never happen
+            assert False  ## this should never happen
 
         ## TDI
         if params["tdi_lev"] == "xyz":
             mich_to_x1 = 4 * jnp.sin(freqs / FSTAR) ** 2
-            integral = (
-                integral
+            output = (
+                output
                 * mich_to_x1[
                     np.newaxis, np.newaxis, :, *[np.newaxis for i in range(postf_dims)]
                 ]
@@ -313,11 +283,22 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             # TODO
             raise NotImplementedError
 
+        # Assert postconditions for clarity: output shape and dtype.
+        output_shape = (3, 3, nf, nt)
+        if sm.has_map and sm.parameterized_map:
+            if sm.basis == "pixel":
+                sky_size = np.sum(sm.mask_idx)
+            else:
+                sky_size = (sm.almax + 1) ** 2
+            output_shape = (3, 3, nf, nt, sky_size)
+        assert output.shape == output_shape
+        assert output.dtype == complex
+
         if plot_flag:
-            sm.fdata_response_mat = integral
+            sm.fdata_response_mat = output
         else:
-            sm.response_mat = integral
-            sm.inj_response_mat = integral
+            sm.response_mat = output
+            sm.inj_response_mat = output
 
 
 def get_sparse_tf_grid(times, freqs):
