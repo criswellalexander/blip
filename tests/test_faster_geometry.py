@@ -63,15 +63,15 @@ def test_arm_orientations(orbits):
         uv = jnp.vecdot(u, v)
         chex.assert_shape(uv, times.shape)
         # cos(60 deg) = 1/2
-        assert jnp.allclose(uv, 0.5, rtol=1e-3)
+        assert jnp.allclose(uv, 0.5)
 
     for t in times:
         u1, v1 = arm_orientations(t, 1, orbits)
         u2, v2 = arm_orientations(t, 2, orbits)
         u3, v3 = arm_orientations(t, 3, orbits)
-        assert jnp.allclose(v1, -u3, rtol=1e-2)
-        assert jnp.allclose(u1, -v2, rtol=1e-2)
-        assert jnp.allclose(u2, -v3, rtol=1e-2)
+        assert jnp.allclose(v1, -u3)
+        assert jnp.allclose(u1, -v2)
+        assert jnp.allclose(u2, -v3)
 
 
 def test_ortho_basis():

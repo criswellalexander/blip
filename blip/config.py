@@ -522,6 +522,8 @@ def parse_config(paramsfile: str, resume: bool):
 
     params["tdi_lev"] = config_params["tdi_lev"]
     params["lisa_config"] = config_params["lisa_config"]
+    if params["faster_geometry"] and params["lisa_config"] != "orbiting":
+        raise ValueError("faster_geometry requires lisa_config = 'orbiting'")
     params["nside"] = int(config_params["nside"])
     params["model_basis"] = config_params["model_basis"]
     params["tstart"] = float(config_params["tstart"])

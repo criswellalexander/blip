@@ -322,7 +322,7 @@ class LISAdata():
         # Convert Doppler to strain units if necessary
         cspeed = 3e8
         fstar = cspeed/(2*np.pi*self.armlength)
-        strain_to_doppler = 2*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt)/fstar
+        strain_to_doppler = -2j*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt)/fstar
         doppler_to_strain = np.divide(1, strain_to_doppler, where=(strain_to_doppler!=0))
         doppler_to_strain[0] = 0.0  # remove uninitialized value
         if self.params["datatype"] == "doppler":
