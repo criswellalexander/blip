@@ -96,6 +96,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         assert isinstance(sm, submodel.submodel)
         assert hasattr(sm, "has_map")
         assert sm.has_map or sm.fullsky
+    del sm  # deleted to prevent accidental use out of scope as in issue #28
 
     orbits = compute_orbits(times)
 
@@ -104,10 +105,10 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     if is_fullsky:
         active_pixels_idx = jnp.arange(npix)
     else:
-        mask_idx = jnp.nonzero(sm.skymap)[0]
-        # mask_idx = sm.mask_idx
         active_pixels_idx_sm = [
-            _intarray_to_set(mask_idx) for sm in submodels if sm.has_map
+            _intarray_to_set(jnp.nonzero(sm.skymap)[0])
+            for sm in submodels
+            if sm.has_map
         ]
         active_pixels_idx = jnp.array(
             sorted(
