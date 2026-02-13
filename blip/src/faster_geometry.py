@@ -104,10 +104,8 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     if is_fullsky:
         active_pixels_idx = jnp.arange(npix)
     else:
-        mask_idx = jnp.nonzero(sm.skymap)[0]
-        # mask_idx = sm.mask_idx
         active_pixels_idx_sm = [
-            _intarray_to_set(mask_idx)
+            _intarray_to_set(jnp.nonzero(sm.skymap)[0])
             for sm in submodels
             if sm.has_map
         ]
