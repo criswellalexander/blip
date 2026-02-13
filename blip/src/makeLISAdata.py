@@ -303,35 +303,35 @@ class LISAdata():
         # some of the logic, but it still needs to be manually kept in sync with
         # makedata().
 
-        # TODO convert between michelson, xyz and aet
-        assert self.params["tdi_lev"] == "xyz", "cannot use AET or Michelson variables for now"
-        assert self.params["datadomain"] == "freq", "cannot yet deal with time-domain external data"
-        assert self.params["datatype"] == "doppler", "if datatype is not doppler this is probably a mistake"
+        if self.params["tdi_lev"] != "xyz":
+            # TODO
+            raise NotImplementedError("cannot use AET or Michelson variables for now")
+        if self.params["datadomain"] != "freq":
+            # TODO when implementing time-domain, change _validate_ldc_data accordingly
+            raise NotImplementedError("cannot yet deal with time-domain external data")
+        if self.params["datatype"] != "doppler":
+            print("WARNING: External data with datatype=strain: probably a mistake")
 
         filepath = os.path.abspath(self.params["datafile"])
         assert os.path.isfile(filepath), f"Not a file: {filepath}"
         tdi, attrs = _ldc_load_array(filepath, name=self.params["ldc_dataset"])
 
-        # put TDI in nice shape, make sure the numbers make sense
+        # Make sure the numbers make sense
         tdi, dt, N = self._validate_ldc_data(tdi, attrs)
 
-        # Characteristic frequency and doppler-to-strain conversion factor
+        # Convert Doppler to strain units if necessary
         cspeed = 3e8
         fstar = cspeed/(2*np.pi*self.armlength)
         strain_to_doppler = 2*np.fft.rfftfreq(2*(tdi.shape[1]-1), dt)/fstar
         doppler_to_strain = np.divide(1, strain_to_doppler, where=(strain_to_doppler!=0))
         doppler_to_strain[0] = 0.0  # remove uninitialized value
+        if self.params["datatype"] == "doppler":
+            tdi *= doppler_to_strain[np.newaxis, :]
 
-        # change to strain data
-        tdi *= doppler_to_strain[np.newaxis, :]
-        # change to time domain
-        # the 1/dt accounts for the fact that an LDC FrequencySeries represents
-        # a continuous-time Fourier transform, sampled at discrete frequencies.
-        # Not the same as a discrete Fourier transform of a time-domain discrete
-        # signal, which is what the FFT is about.
-        #
-        # So, when dealing with LDC data, every rfft needs to be accompanied by a
-        # "*dt", and every irfft by a "/dt".
+        # Change to time domain.
+        # The 1/dt factor is necessary because LDC frequency series are discrete time
+        # Fourier transforms (DTFTs): every rfft needs to be accompanied by a "*dt",
+        # and every irfft by a "/dt".
         tdi = np.fft.irfft(tdi, axis=1) / dt
 
         # cut to required length
@@ -347,44 +347,27 @@ class LISAdata():
         self.f0 = self.fdata/(2*fstar)
 
     def _validate_ldc_data(self, tdi, attrs):
-        assert (
-            len(tdi.shape) == 2
-        ), f"Expected TDI array with rank 2, got: {len(tdi.shape) = }"
-        assert (
-            3 in tdi.shape or 4 in tdi.shape
-        ), f"Expected three TDI channels, got {tdi.shape = }"
+        # We will accept the shape (3, nfreqs) only for now.
+        if len(tdi.shape) != 2:
+            raise ValueError(f"Expected TDI array with rank 2, got: {len(tdi.shape) = }")
+        if not tdi.shape[0]==3:
+            raise ValueError(f"Expected three TDI channels, got {tdi.shape = }")
 
-        # guess whether to transpose things by looking at the matrix shape
-        if tdi.shape[1] in (3, 4):
-            tdi = tdi.T
-        # ignore time or frequency array (we will use `dt` or `df` attributes instead)
-        if tdi.shape[0] == 4:
-            tdi = tdi[1:, :]
-        assert tdi.shape[0] == 3
-
-        if self.params["datadomain"] == "time":
-            dt = attrs.get("dt")
-            assert dt is not None, (
-                f"The array {self.params['ldc_dataset']} contains no 'dt' attribute.\n"
-                "Is it really in time domain? If not, change the parameter `datadomain` to 'freq'."
-            )
-            N = tdi.shape[1]
-            Tobs = N * dt
-            df = 1 / Tobs
-
-        elif self.params["datadomain"] == "freq":
+        if self.params["datadomain"] == "freq":
             df = attrs.get("df")
-            assert df is not None, (
-                f"The array {self.params['ldc_dataset']} contains no 'df' attribute.\n"
-                "Is it really in frequency domain? If not, change the parameter `datadomain` to 'time'."
+            if df is None:
+                raise ValueError(f"The array {self.params['ldc_dataset']} contains"
+                    f"no 'df' attribute.\nIs it really in frequency domain? If not,"
+                    f"change the parameter `datadomain` to 'time'."
             )
-            assert df > 0
+            if df <= 0:
+                raise ValueError("df must be positive")
             Tobs = 1 / df
             N = 2 * (tdi.shape[1] - 1)  # same size assumed by np.fft.irfft
             dt = Tobs / N
 
         else:
-            assert False, "Unreachable"
+            assert False, "unreachable, only freq domain accepted"
 
         if not np.isclose(1 / dt, self.params["fs"]):
             raise ValueError(
