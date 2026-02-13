@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from enum import Enum
 import configparser
@@ -350,8 +351,11 @@ def parse_config(paramsfile: str, resume: bool):
         `str` to the appropriate types.
 
     For invalid input configurations: raises `TypeError`, `ValueError`, `KeyError`,
-    `AssertionError`, or `configparse.NoOptionError`.
+    `AssertionError`, or `configparse.NoOptionError`, `FileNotFoundError`.
     """
+
+    if not os.path.isfile(paramsfile):
+        raise FileNotFoundError(paramsfile)
 
     # These are the returned dictionaries, containing a *valid* configuration
     # with options that already have the right types.
@@ -432,6 +436,9 @@ def parse_config(paramsfile: str, resume: bool):
     params["load_data"] = config_params.getboolean("load_data")
     params["datatype"] = config_params["datatype"]
     params["datafile"] = config_params["datafile"]
+    if params["load_data"]:
+        if not os.path.isfile(params["datafile"]):
+            raise FileNotFoundError(params["datafile"])
     params["datafileformat"] = config_params["datafileformat"]
     assert params["datafileformat"] in ["mldc", "ldc"], "Invalid input file format."
     params["datadomain"] = config_params["datadomain"]
