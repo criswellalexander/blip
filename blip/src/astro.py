@@ -20,7 +20,7 @@ class Population():
     and preparing data for use in some of the makeLISAdata.py signal simulation methods. 
     '''
 
-    def __init__(self, params, inj, frange, popdict, map_only=False):
+    def __init__(self, params, inj, frange, popdict, seed=None, map_only=False):
         '''
         Produces a population object with an attached skymap and spectrum.
         
@@ -49,12 +49,17 @@ class Population():
         
         ## load the population
         if self.popdict['coldict'] is None:
-            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'])
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],
+                                       names=self.popdict['columns'],sep=self.popdict['delimiter'],
+                                       seed=seed)
         else:
-            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],names=self.popdict['columns'],sep=self.popdict['delimiter'],coldict=self.popdict['coldict'])
+            pop = self.load_population(self.popdict['popfile'],self.params['fmin'],self.params['fmax'],
+                                       names=self.popdict['columns'],sep=self.popdict['delimiter'],
+                                       coldict=self.popdict['coldict'],seed=seed)
         
         ## get the skymap
-        self.skymap = self.pop2map(pop,self.params['nside'],self.params['dur']*u.s,self.params['fmin'],self.params['fmax'])
+        df = self.frange[1] - self.frange[0]
+        self.skymap = self.pop2map(pop,self.params['nside'],df*u.Hz,self.params['fmin'],self.params['fmax'])
         ## also compute the spherical harmonic transform if the injection is using the spherical harmonic basis
         if self.inj['inj_basis']=='sph':
             self.sph_skymap = skymap_pix2sph(self.skymap,self.inj['inj_lmax'])
@@ -62,19 +67,15 @@ class Population():
         ## spectrum
         if not map_only:
             ## PSD at injection frequency binning
-            self.PSD = self.pop2spec(pop,self.frange,self.params['dur']*u.s,
+            self.PSD = self.pop2spec(pop,self.frange,self.params['seglen']*u.s,
                                      SNR_cut=self.popdict['snr_cut'],return_median=False,plot=True,saveto=params['out_dir'])
             ## PSD at data frequencies
             self.fftfreqs = np.fft.rfftfreq(int(self.params['fs']*self.params['seglen']),1/self.params['fs'])[1:]
-            self.PSD_true = self.pop2spec(pop,self.fftfreqs,self.params['dur']*u.s,return_median=False,plot=False)[np.logical_and(self.fftfreqs >=  self.params['fmin'] , self.fftfreqs <=  self.params['fmax'])]
+            self.PSD_true = self.pop2spec(pop,self.fftfreqs,self.params['seglen']*u.s,return_median=False,plot=False)[np.logical_and(self.fftfreqs >=  self.params['fmin'] , self.fftfreqs <=  self.params['fmax'])]
             self.frange_true = self.fftfreqs[np.logical_and(self.fftfreqs >=  self.params['fmin'] , self.fftfreqs <=  self.params['fmax'])]
-                  
-            
-            ## factor of 2 is for GW amplitude convention with a prefactor of 2, i.e. h0**2 = A+**2 + Ax**2 = 2A**2
-            ## if instead using prefactor of 4 convention, no factor of 4 because h0 = A
-            ## should add a flag in case we use a pop with the factor of 4 convention
-            self.Sgw = self.PSD *4
-            self.Sgw_true = self.PSD_true*4
+            self.Sgw = self.PSD
+            ## reweight to match what we are injecting at data frequencies
+            self.Sgw_true = self.PSD_true * (self.params['seglen']/self.params['tsplice'])
         
         
     def rebin_PSD(self,fs_new):
@@ -116,7 +117,7 @@ class Population():
     
     @staticmethod
     def load_population(popfile,fmin,fmax,coldict={'f':'f','h':'h','lat':'lat','long':'long'},unitdict={'f':u.Hz,'lat':u.rad,'long':u.rad},
-                        sep=' ',**read_csv_kwargs):
+                        sep=' ',seed=None,**read_csv_kwargs):
         # Would also be good to have an option for giving binary parameters and computing the strain here?
         '''
         Function to load a population file and store relevant data. For now this assumes columns with labels ['f','h',lat','long'].
@@ -150,31 +151,86 @@ class Population():
         hs = dwds[coldict['h']].to_numpy()
         lats = (dwds[coldict['lat']].to_numpy()*unitdict['lat']).to(u.deg).value
         longs = (dwds[coldict['long']].to_numpy()*unitdict['long']).to(u.deg).value
+
+        ## inclination handling
+        if 'inc' in coldict.keys():
+            cos_incs = np.cos(dwds[coldict['inc']].to_numpy()) ## assumed radians
+        elif 'cosi' in coldict.keys():
+            cos_incs = dwds[coldict['cosi']].to_numpy()
+        else:
+            print("No inclinations provided. Randomly drawing from cosi ~ U(-1,1)")
+            if seed is None:
+                print("Warning: No random seed was provided to the Population object, inclinations will not be reproducible.")
+            rng = np.random.default_rng(seed)
+            cos_incs = 2*rng.random(size=len(fs)) - 1
+
         ## filter to frequency band
 #        f_filter = (fs >= fmin) & (fs <= fmax)
         ## generate pop dict
-        pop = {'fs':fs,'hs':hs,'lats':lats,'longs':longs}
+        pop = {'fs':fs,'hs':hs,'lats':lats,'longs':longs,'cos_incs':cos_incs}
         return pop
         
         
     @staticmethod
-    def get_binary_psd(hs,t_obs):
+    def get_binary_psd(hs,cos_incs,df):
         '''
         Function to calculate PSD of catalogue binaries. Assumed monochromatic.
+
+        We assume a definition of amplitude such that A = h0, so
+
+        h(t) = h+(t) + hx(t),
+
+        h+(t) = (1+cos^2(i)) * A * cos(2*omega*t + phi0),
+
+        and
+
+        hx(t) = 2 * cosi * A * sin(2omega*t + phi0).
+
+        The strain power is then
+
+        <h(t)^2> = (1+cos^2(i))^2 * A^2 + 4 * cos^2(i) * A^2
+
+        which for optimal inclination (i=0, face-on) yields
+
+        <h(t)^2> = 8A^2.
+
+        The PSD contribution from the monochromatic binary at
+        frequency resolution df = 1/Tobs is then
+
+        PSD = (1/df) * < h(t)^2 >
+
+        which in the optimal inclination case is
+
+        PSD = 8 * (1/df) * A^2.
+
+        Note that by combining the + and x contributions prior to convolution with the LISA
+        response functions, we implicitly assume that the overall population produces an
+        unpolarized stochastic signal. This is statistically true for any stochastic signal produced
+        by a population of binaries with uniformly distributed inclinations, but the assumption may
+        break down in some cases.
         
+
+        Also note that there is an alternate definition for the amplitude A,
+        such that A = 2h0. If used here, this will result in an erroneous factor of 4 in the PSD.
+
         Arguments:
             hs (1D array of floats) : Binary strains.
-            t_obs (astropy Quantity, time units) : Observation time.
+            cos_incs (1D array of floats) : cosine of binary inclinations
+            df (astropy Quantity, frequency units) : Binning frequency resolution.
         
         Returns:
             binary_psds (1D array of floats): Monochromatic PSDs for each binary
         '''
-        binary_psds = t_obs*hs**2
+
+        h2s = (1+cos_incs**2)**2 * hs**2 + 4 * cos_incs**2 * hs**2
+
+
+        binary_psds = h2s/df
         
         return binary_psds
     
     @classmethod
-    def get_snr(cls,fs,hs,t_obs,noise_PSD='default'):
+    def get_snr(cls,fs,hs,cos_incs,t_obs,noise_PSD='default'):
         ## need to update this to take either legwork or local noise PSD
         '''
         Function to get SNRs of catalogue binaries, given their frequencies/strains, observation time, and a detector PSD.
@@ -195,7 +251,8 @@ class Population():
             noise_PSD = lw.psd.lisa_psd(fs,t_obs=t_obs,confusion_noise='robson19')
         elif noise_PSD=='no_fg':
             noise_PSD = lw.psd.lisa_psd(fs,t_obs=t_obs,confusion_noise=None)
-        SNRs = cls.get_binary_psd(hs,t_obs)/(4*noise_PSD)
+        ## we want the SNRs for the resolved binaries at the full frequency resolution
+        SNRs = cls.get_binary_psd(hs,cos_incs,1/t_obs)/(4*noise_PSD)
         return SNRs
     
     @staticmethod
@@ -204,7 +261,7 @@ class Population():
         Function to filter DWD data by SNR. Can return either unresolved (SNR < SNR_cut) or resolved (SNR > SNR_cut) binaries.
         
         Arguments:
-            data (1D array of floats) : Binary population data of your choice, corresponding to the given SNRs
+            data (1D array of floats) : Binary population data of your choice (or list thereof), corresponding to the given SNRs
             SNRs (1D array of floats) : SNR value for each system corresponding to data
             SNR_cut (float) : Value of SNR that delineates resolved and unresolved binaries. Default is SNR = 7.
             get_type (str) : Whether to return the resolved or unresolved binaries. Default is unresolved.
@@ -212,22 +269,33 @@ class Population():
         Returns:
             data_filt : Filtered arrays of frequencies and strains.
         '''
+        if type(data) is not list:
+            data = [data]
         if get_type=='unresolved':
-            return data[SNRs<SNR_cut]
+            data_filt = [data_i[SNRs<SNR_cut] for data_i in data]
+            if len(data_filt) == 1:
+                data_filt = data_filt[0]
+            return data_filt
         elif get_type=='resolved':
-            return data[SNRs>=SNR_cut]
+            data_filt = [data_i[SNRs>=SNR_cut] for data_i in data]
+            if len(data_filt) == 1:
+                data_filt = data_filt[0]
+            return data_filt
         else:
             print("Invalid specification of get_type; can be 'resolved' or 'unresolved'.")
             raise
     
     @classmethod
-    def gen_summed_spectrum(cls,fs,hs,frange,t_obs,plot=False,saveto=None,return_median=False):
+    def gen_summed_spectrum(cls,fs,hs,cos_incs,frange,t_obs,plot=False,saveto=None,return_median=False):
         '''
         Function to calculate the foreground spectrum arising from a set of monochromatic strains and associated frequencies.
+
+        Binaries passed to this function are assumed to all contribute to the foreground.
         
         Arguments:
             fs (1D array of floats) : Binary frequencies. Assumed monochromatic.
-            hs (1D array of floats) : Binary strains.
+            hs (1D array of floats) : Binary strain amplitudes.
+            cos_incs (1D array of floats) : Cosine of the binary inclinations
             t_obs (astropy Quantity, time units) : Observation time.
             frange (1D array of floats) : Frequencies at which to calculate binned PSD
         
@@ -236,23 +304,31 @@ class Population():
         '''
         
         
-        ## get strain squared power
-        PSDs_unres = cls.get_binary_psd(hs,4*u.yr)
+
         
         ## get BLIP frequency bins
         bin_width = frange[1] - frange[0]
         bin_widths = bin_width
         bins = np.append(frange - bin_width/2,frange[-1]+bin_width/2)
         
+        ## get strain squared power
+        PSDs_unres = cls.get_binary_psd(hs,cos_incs,bin_width)
+
         ## check minimum frequency resolution
         ## set minimum bin width to delta_f = 1/T_obs
         ## for now fix to LISA 4yr duration
-        min_bin_width = (1/(4*u.yr)).to(u.Hz)
+        min_bin_width = (1/(t_obs)).to(u.Hz)
         if np.any(bin_widths*u.Hz<min_bin_width):
             print("Warning: frequency resolution exceeds the maximum allowed by t_obs.")
         
         ## bin
-        fg_PSD_binned, edges = np.histogram(fs,bins=bins,weights=PSDs_unres)
+        fg_hist_binned, edges = np.histogram(fs,bins=bins,weights=PSDs_unres)
+
+        ## np.histogram computes p((1/dfbin)*h^2|f) x N_unres x dfbin
+        ## PSD should be p(h^2|f) x N_unres / dfbin
+        fg_PSD_binned = fg_hist_binned * (t_obs*bin_width)
+        print(t_obs)
+        print(bin_width)
     
         ## get running median if needed
         if plot or return_median:
@@ -268,9 +344,9 @@ class Population():
             det_PSD_robson = lw.psd.lisa_psd(frange*u.Hz,t_obs=4*u.yr,confusion_noise='robson19',approximate_R=True)
             plt.plot(frange,det_PSD,color='black',ls='--',label='Detector PSD')
             plt.plot(frange,det_PSD_robson,color='black',label='Detector PSD (R19)')
-            plt.plot(frange,response_lw*fg_PSD_binned/bin_widths,color='slategray',alpha=0.5,label='Foreground')
-            plt.plot(frange,response_lw*runmed_binned/bin_widths,color='teal',alpha=0.5,label='FG Running Median')
-            plt.plot(frange,response_lw*runmed_binned/bin_widths*(1/u.Hz)+det_PSD,color='mediumorchid',alpha=0.5,label='FG + Det. PSD')
+            plt.plot(frange,response_lw*fg_PSD_binned,color='slategray',alpha=0.5,label='Foreground')
+            plt.plot(frange,response_lw*runmed_binned,color='teal',alpha=0.5,label='FG Running Median')
+            plt.plot(frange,response_lw*runmed_binned*(1/u.Hz)+det_PSD,color='mediumorchid',alpha=0.5,label='FG + Det. PSD')
             plt.legend(loc='upper right')
             plt.xscale('log')
             plt.yscale('log')
@@ -286,9 +362,9 @@ class Population():
             plt.figure()
             plt.plot(frange,det_PSD,color='black',ls='--',label='Detector PSD')
             plt.plot(frange,det_PSD_robson,color='black',label='Detector PSD (R19)')
-            plt.plot(frange,response_lw*fg_PSD_binned/bin_widths,color='slategray',alpha=0.5,label='Foreground')
-            plt.plot(frange,response_lw*runmed_binned/bin_widths,color='teal',alpha=0.5,label='FG Running Median')
-            plt.plot(frange,response_lw*runmed_binned/bin_widths*(1/u.Hz)+det_PSD,color='mediumorchid',alpha=0.5,label='FG + Det. PSD')
+            plt.plot(frange,response_lw*fg_PSD_binned,color='slategray',alpha=0.5,label='Foreground')
+            plt.plot(frange,response_lw*runmed_binned,color='teal',alpha=0.5,label='FG Running Median')
+            plt.plot(frange,response_lw*runmed_binned*(1/u.Hz)+det_PSD,color='mediumorchid',alpha=0.5,label='FG + Det. PSD')
             plt.legend(loc='upper right')
             plt.xscale('log')
             plt.yscale('log')
@@ -300,11 +376,11 @@ class Population():
             plt.close()
         
         if return_median:
-            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
-            median_spectrum = runmed_binned/bin_widths *u.Hz*u.s
+            spectrum =  fg_PSD_binned *u.Hz*u.s
+            median_spectrum = runmed_binned *u.Hz*u.s
             return spectrum, median_spectrum
         else:
-            spectrum =  fg_PSD_binned/bin_widths *u.Hz*u.s
+            spectrum =  fg_PSD_binned *u.Hz*u.s
             return spectrum
      
     @staticmethod
@@ -350,18 +426,18 @@ class Population():
         Returns:
             fg_PSD (array of floats) : Resulting PSD of unresolved binary background/foreground for all f in frange
         '''
-        fs, hs = pop['fs'], pop['hs']
+        fs, hs, cos_incs = pop['fs'], pop['hs'], pop['cos_incs']
         ## note, for now we are fixing t_obs=4yr for the purpose of determining which systems are unresolved!!
-        snrs = cls.get_snr(fs*u.Hz,hs,(4*u.yr).to(u.s))
-        fs_unres, hs_unres = cls.filter_by_snr(fs,snrs,SNR_cut=SNR_cut), cls.filter_by_snr(hs,snrs,SNR_cut=SNR_cut)
-        PSD = cls.gen_summed_spectrum(fs_unres,hs_unres,frange,t_obs,return_median=return_median,plot=plot,saveto=saveto)
+        snrs = cls.get_snr(fs*u.Hz,hs,cos_incs,(4*u.yr).to(u.s))
+        fs_unres, hs_unres, cos_incs_unres = cls.filter_by_snr([fs,hs,cos_incs],snrs,SNR_cut=SNR_cut)
+        PSD = cls.gen_summed_spectrum(fs_unres,hs_unres,cos_incs_unres,frange,t_obs,return_median=return_median,plot=plot,saveto=saveto)
         if return_median:
             return PSD[0].value, PSD[1].value
         else:
             return PSD.value
     
     @classmethod
-    def pop2map(cls,pop,nside,t_obs,fmin,fmax,SNR_cut=7):
+    def pop2map(cls,pop,nside,df,fmin,fmax,SNR_cut=7):
         '''
         Function to get a skymap from a catalogue of binaries.
         
@@ -376,11 +452,11 @@ class Population():
             skymap (array of floats) : Healpix skymap of GW power on the sky
             logskymap (array of floats) : Healpix skymap of log GW power on the sky
         '''
-        fs, hs, lats, longs = pop['fs'], pop['hs'], pop['lats'], pop['longs']
-        snrs = cls.get_snr(fs*u.Hz,hs,t_obs)
-        lats_unres, longs_unres = cls.filter_by_snr(lats,snrs,SNR_cut=SNR_cut), cls.filter_by_snr(longs,snrs,SNR_cut=SNR_cut)
-        hs_unres = cls.filter_by_snr(hs,snrs,SNR_cut=SNR_cut)
-        psds = cls.get_binary_psd(hs_unres,t_obs)
+        fs, hs, lats, longs, cos_incs = pop['fs'], pop['hs'], pop['lats'], pop['longs'], pop['cos_incs']
+        ## note, for now we are fixing t_obs=4yr for the purpose of determining which systems are unresolved!!
+        snrs = cls.get_snr(fs*u.Hz,hs,cos_incs,(4*u.yr).to(u.s))
+        hs_unres, cos_incs_unres, lats_unres, longs_unres = cls.filter_by_snr([hs,cos_incs,lats,longs],snrs,SNR_cut=SNR_cut)
+        psds = cls.get_binary_psd(hs_unres,cos_incs_unres,df)
         skymap = cls.gen_summed_map(lats_unres,longs_unres,psds,nside)
         return skymap
     
@@ -399,10 +475,10 @@ class Population():
         
         pop = cls.load_population(popfile,frange.min(),frange.max(),**read_csv_kwargs)
         
-        return cls.pop2spec(pop,frange,t_obs,SNR_cut=7,plot=plot,return_median=return_median)
+        return cls.pop2spec(pop,frange,t_obs,SNR_cut=SNR_cut,plot=plot,return_median=return_median)
     
     @classmethod
-    def file2map(cls,popfile,nside,t_obs,fmin,fmax,SNR_cut=7,**read_csv_kwargs):
+    def file2map(cls,popfile,nside,df,fmin,fmax,SNR_cut=7,**read_csv_kwargs):
         '''
         Wrapper function to get a skymap directly from a population catalogue file.
         
@@ -419,7 +495,7 @@ class Population():
         '''
         pop = cls.load_population(popfile,fmin,fmax,**read_csv_kwargs)
         
-        return cls.pop2map(pop,nside,t_obs,fmin,fmax,SNR_cut=7)
+        return cls.pop2map(pop,nside,df,fmin,fmax,SNR_cut=SNR_cut)
         
         
         
