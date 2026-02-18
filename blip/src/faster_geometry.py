@@ -299,7 +299,20 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         # set T channel response to zero to avoid inference problems with IFE data.
         # FIXME this should not be needed.
         if not (sm.has_map and sm.parameterized_map):
-            from bulgedisk import xyz2aet_quad, aet2xyz_quad
+            xyz2aet_matrix = jnp.array(
+                [
+                    jnp.array([-1, 0, 1]) / jnp.sqrt(2),
+                    jnp.array([1, -2, 1]) / jnp.sqrt(6),
+                    jnp.array([1, 1, 1]) / jnp.sqrt(3),
+                ]
+            )
+            aet2xyz_matrix = xyz2aet_matrix.T
+
+            def xyz2aet_quad(mat, /):
+                return xyz2aet_matrix @ mat @ xyz2aet_matrix.T
+
+            def aet2xyz_quad(mat, /):
+                return aet2xyz_matrix @ mat @ aet2xyz_matrix.T
 
             assert output.shape == (3, 3, nf, nt)
             output_aet = np.array(xyz2aet_quad(output.transpose(2, 3, 0, 1)))
