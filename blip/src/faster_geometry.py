@@ -468,7 +468,7 @@ def mich_response_unconvolved(t, f, n, orbits):
     for c1 in range(3):
         for c2 in range(c1, 3):
             omega = 2 * jnp.pi * f
-            nuc = -jnp.dot(n, links[c1, c2]) / CLIGHT
+            nuc = -jnp.dot(n, links[c1, c2] * ARMLENGTH) / CLIGHT
             phase = jnp.exp(-1j * omega * nuc)
             fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
             fp2 = mich_antenna_pattern(t, f, n, "plus", c2, orbits)
