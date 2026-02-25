@@ -569,7 +569,8 @@ class Galaxy_Model():
         self.q = 0.5
         
         ## compute the bulge density (independent of rh,zh)
-        self.bulge_density = self.rho_c*(jnp.exp(-(self.r/self.r_cut)**2)/(1+jnp.sqrt(self.r**2 + (self.z/self.q)**2)/self.r0)**self.alpha)
+        rp = jnp.sqrt(self.r**2 + (self.z/self.q)**2)
+        self.bulge_density = self.rho_c*(jnp.exp(-(rp/self.r_cut)**2)/(1+rp/self.r0)**self.alpha)
         
         
         if fix_rh is not None:
@@ -598,7 +599,6 @@ class Galaxy_Model():
         '''
         ## Calculate density distribution
         disk_density = self.disk_density_radial_prefactor*jnp.exp(-jnp.abs(self.z)/zh) 
-#        bulge_density = self.rho_c*(jnp.exp(-(self.r/self.r_cut)**2)/(1+jnp.sqrt(self.r**2 + (self.z/self.q)**2)/self.r0)**self.alpha)
         summed_density = disk_density + self.bulge_density
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
@@ -624,7 +624,6 @@ class Galaxy_Model():
         '''
         ## Calculate density distribution
         disk_density = self.rho_c*jnp.exp(-self.r/rh)*jnp.exp(-jnp.abs(self.z)/zh) 
-#        bulge_density = self.rho_c*(jnp.exp(-(self.r/self.r_cut)**2)/(1+jnp.sqrt(self.r**2 + (self.z/self.q)**2)/self.r0)**self.alpha)
         summed_density = disk_density + self.bulge_density
         ## use stored grid to convert density to power and filter nearby resolved DWDs
         unresolved_powers = summed_density*self.dist_adj
@@ -673,7 +672,8 @@ def generate_galactic_foreground(rh,zh,nside):
     alpha = 1.8
     q = 0.5
     disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh) 
-    bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
+    rp = np.sqrt(r**2 + (z/q)**2)
+    bulge_density = rho_c*(np.exp(-(rp/r_cut)**2)/(1+rp/r0)**alpha)
     DWD_density = disk_density + bulge_density
     ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
     gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')    
@@ -734,7 +734,8 @@ def generate_galactic_bulge(nside,rho_c=1,r_cut=2.1, r0=0.075,alpha=1.8,q=0.5):
     r = np.sqrt(x**2 + y**2)
     ## Calculate density distribution
     # disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh)
-    bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
+    rp = np.sqrt(r**2 + (z/q)**2)
+    bulge_density = rho_c*(np.exp(-(rp/r_cut)**2)/(1+rp/r0)**alpha)
     DWD_density = bulge_density
     ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
     gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')
@@ -786,7 +787,6 @@ def generate_galactic_disk(rh,zh,nside):
     ## Calculate density distribution
     rho_c = 1
     disk_density = rho_c*np.exp(-r/rh)*np.exp(-np.abs(z)/zh)
-    # bulge_density = rho_c*(np.exp(-(r/r_cut)**2)/(1+np.sqrt(r**2 + (z/q)**2)/r0)**alpha)
     DWD_density = disk_density
     ## Use astropy.coordinates to transform from galactocentric frame to eclipticc (solar system barycenter) frame.
     gc = cc.SkyCoord(x=x*u.kpc,y=y*u.kpc,z=z*u.kpc, frame='galactocentric')

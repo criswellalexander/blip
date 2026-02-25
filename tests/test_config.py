@@ -40,3 +40,8 @@ def test_default_params():
 def test_model_spec_errors(specs, expectation):
     with expectation:
         parse_model_spec(specs, is_injection=True, truevals_all=TRUEVALS)
+
+
+def test_file_not_found(tmp_path):
+    with raises(FileNotFoundError):
+        parse_config(tmp_path/"inexistent.ini", resume=False)

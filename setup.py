@@ -24,7 +24,7 @@ setup(
         "numpy>=2.0,<2.4",
         "matplotlib",
         "healpy",
-        "scipy<1.17",  # need deprecated scipy.special.sph_harm
+        "scipy>=1.15",  # require sph_harm_y
         "astropy",
         "pandas",
         "corner",

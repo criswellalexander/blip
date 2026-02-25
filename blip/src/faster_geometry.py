@@ -96,7 +96,9 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         assert isinstance(sm, submodel.submodel)
         assert hasattr(sm, "has_map")
         assert sm.has_map or sm.fullsky
+    del sm  # deleted to prevent accidental use out of scope as in issue #28
 
+    assert params["lisa_config"] == "orbiting"
     orbits = compute_orbits(times)
 
     npix = hp.nside2npix(params["nside"])
@@ -123,20 +125,19 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     # Vectorize twice: on times and on frequencies.
     # Sky directions are done sequentially
-    ## this vectorizes on times
     _mru_vect = vmap(
         mich_response_unconvolved, (0, None, None, None), out_axes=2
     )  # (3, 3, ntimes)
-    ## this vectorizes on frequencies
     _mru_vec2 = vmap(
         _mru_vect, (None, 0, None, None), out_axes=2
     )  # (3, 3, nfreqs, ntimes)
-    ## jit the time x frequency calculation
     mru_vec2 = jit(_mru_vec2)
 
-    ## get the sparse time-frequency grid to interpolate on later
+    # Set up sparse grid for interpolation
     times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
+    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
+    _interpolate = jit(_interpolate)
 
     ## check runtime, memory use
     _compiled = mru_vec2.lower(
@@ -151,14 +152,14 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     # bytes accessed = 3049 bytes / time / freq / pixel
     #          flops = 1378  flop / time / freq / pixel
 
-    # NOTE the usage of 3x3 complex matrices in our context is a waste of RAM. We assume
-    # equal and constant LTTs, so our SGWB can be perfectly described by two real
-    # series: the AA and EE time-varying PSDs. That would reduce the output from 144
-    # bytes to 16 bytes per time per frequency per pixel (9x compression). And that's
-    # still using double precision, which we don't need for the response matrix output.
-    # Using single precision we could do 144 -> 8 bytes, an 18x compression.
-    ## However, the matrix inversions in the likelihood require double precision,
-    # and the spherical harmonic search requires the complex responses.
+    # NOTE(solano) the usage of 3x3 complex matrices in our context is a waste of RAM.
+    # We assume equal and constant LTTs, so our SGWB can be perfectly described by two
+    # real series: the AA and EE time-varying PSDs. That would reduce the output from
+    # 144 bytes to 16 bytes per time per frequency per pixel (9x compression). And
+    # that's still using double precision, which we don't need for the response matrix
+    # output. Using single precision we could do 144 -> 8 bytes, an 18x compression.
+    # NOTE(awc) However, the matrix inversions in the likelihood require double
+    # precision, and the spherical harmonic search requires the complex responses.
 
     ## Loop over sky directions sequentially, computing the per-pixel responses as we go
     ## We only do this on pixels with power
@@ -172,41 +173,31 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     ):
         responses_sparse.append(mru_vec2(times_sparse, freqs_sparse, pix_vec, orbits))
 
-    ## these should always be 3 x 3 x frequencies x times
     chex.assert_shape(responses_sparse[0], (3, 3, nf_s, nt_s))
     chex.assert_equal_shape(responses_sparse)
+
+    dOmega = 4 * np.pi / npix
 
     # Integrate on sky for each submodel. We do this sequentially with a python for loop
     # and using plain numpy (not jax) arrays. The point of this is to avoid allocating
     # memory for the whole integrand, a large rank-5 tensor.
-
-    ## get dOmega
-    dOmega = 4*np.pi / npix
-
-    ## set up the interpolator
-    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
-    _interpolate = jit(_interpolate)
     for sm in submodels:
         ## models with maps
         if sm.has_map:
+            output = np.zeros((3, 3, nf, nt), dtype=complex)
+            postf_dims = 1  # nb of tensor dimensions after freqs
+
             ## models with fixed templates
             if not sm.parameterized_map:
                 if sm.basis == "pixel":
-                    ## check that the skymap has the correct number of pixels
                     chex.assert_shape(sm.skymap, (npix,))
-
-                    ## 3 x 3 x frequency x time
-                    integral = np.zeros((3, 3, nf, nt))
-                    postf_dims = 1  ## just time
 
                     ## normalize skymap such that it integrates to 1 over the sky
                     skymap_normalized = sm.skymap / (jnp.sum(sm.skymap) * dOmega)
 
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        integral += skymap_normalized[i] * response * dOmega
+                        output += skymap_normalized[i] * response * dOmega
 
                 elif sm.basis == "sph":
                     alm_size = (sm.almax + 1) ** 2
@@ -216,24 +207,15 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     ## Get the spherical harmonics
                     for ii in range(alm_size):
                         lval, mval = sm.idxtoalm(sm.almax, ii)
-                        Ylms[:, ii] = sph_harm_y(
-                            mval, lval, theta, phi
-                        )  ## theta, phi switched due to new scipy convention
+                        Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi)
                     ## check that the Ylms have the right number of pixels, sph terms
                     chex.assert_shape(Ylms, (npix, alm_size))
 
-                    ## 3 x 3 x frequency x time x Ylms
-                    integral = np.zeros((3, 3, nf, nt), dtype="complex")
-                    postf_dims = 1  ## time x Ylms
-
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        pix_sph_sum = np.sum(
-                            Ylms[i, :] * sm.alms_inj
-                        )  ## sum over Ylms for this pixel
-                        integral += pix_sph_sum * response * dOmega
+                        # from Ylms, get skymap intensity for this pixel
+                        pix_sph_sum = np.sum(Ylms[i, :] * sm.alms_inj)
+                        output += pix_sph_sum * response * dOmega
 
                 else:
                     assert False
@@ -241,22 +223,16 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             ## parameterized spatial models
             else:
                 if sm.basis == "pixel":
-
-                    ## 3 x 3 x frequency x time
                     sky_size = np.sum(sm.mask_idx)
-                    integral = np.zeros((3, 3, nf, nt, sky_size))
-                    postf_dims = 2  ## time x npix
+                    output = np.zeros((3, 3, nf, nt, sky_size), dtype=complex)
+                    postf_dims = 2  # nb of tensor dimensions after freqs
 
-                    ## loop over pixels, interpolating the response as we go
-                    ## only loop over pixels in the skymap with nonzero power
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         if i in sm.mask_idx:
                             response = _interpolate(response_sparse)
-                            integral[..., i] = response
+                            output[..., i] = response
 
-                ## spherical harmonic search
                 elif sm.basis == "sph":
-
                     alm_size = (sm.almax + 1) ** 2
                     ## angular coordinates of pixel indices
                     theta, phi = hp.pix2ang(params["nside"], active_pixels_idx)
@@ -264,20 +240,18 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
                     ## Get the spherical harmonics
                     for ii in range(alm_size):
                         lval, mval = sm.idxtoalm(sm.almax, ii)
-                        Ylms[:, ii] = sph_harm_y(
-                            mval, lval, theta, phi
-                        )  ## theta, phi switched due to new scipy convention
+                        Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi)
                     ## check that the Ylms have the right number of pixels, sph terms
                     chex.assert_shape(Ylms, (npix, alm_size))
 
                     ## 3 x 3 x frequency x time x Ylms
-                    integral = np.zeros((3, 3, nf, nt, alm_size), dtype="complex")
+                    output = np.zeros((3, 3, nf, nt, alm_size), dtype="complex")
                     postf_dims = 2  ## time x Ylms
 
                     ## loop over pixels, interpolating the response as we go
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
-                        integral += (
+                        output += (
                             Ylms[None, None, None, None, i, :]
                             * response[..., None]
                             * dOmega
@@ -287,22 +261,22 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
         elif sm.spatial_model_name == "isgwb":
 
-            integral = np.zeros((3, 3, nf, nt))
+            output = np.zeros((3, 3, nf, nt), dtype=complex)
             postf_dims = 1  ## just time
 
             ## loop over pixels, interpolating the response as we go
             for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                 response = _interpolate(response_sparse)
-                integral += (1 / (4 * jnp.pi)) * response * dOmega
+                output += (1 / (4 * jnp.pi)) * response * dOmega
 
         else:
-            assert False ## this should never happen
+            assert False  ## this should never happen
 
         ## TDI
         if params["tdi_lev"] == "xyz":
             mich_to_x1 = 4 * jnp.sin(freqs / FSTAR) ** 2
-            integral = (
-                integral
+            output = (
+                output
                 * mich_to_x1[
                     np.newaxis, np.newaxis, :, *[np.newaxis for i in range(postf_dims)]
                 ]
@@ -311,11 +285,51 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             # TODO
             raise NotImplementedError
 
+        # Assert postconditions for clarity: output shape and dtype.
+        output_shape = (3, 3, nf, nt)
+        if sm.has_map and sm.parameterized_map:
+            if sm.basis == "pixel":
+                sky_size = np.sum(sm.mask_idx)
+            else:
+                sky_size = (sm.almax + 1) ** 2
+            output_shape = (3, 3, nf, nt, sky_size)
+        assert output.shape == output_shape
+        assert output.dtype == complex
+
+        # set T channel response to zero to avoid inference problems with IFE data.
+        # FIXME this should not be needed.
+        if not (sm.has_map and sm.parameterized_map):
+            xyz2aet_matrix = jnp.array(
+                [
+                    jnp.array([-1, 0, 1]) / jnp.sqrt(2),
+                    jnp.array([1, -2, 1]) / jnp.sqrt(6),
+                    jnp.array([1, 1, 1]) / jnp.sqrt(3),
+                ]
+            )
+            aet2xyz_matrix = xyz2aet_matrix.T
+
+            def xyz2aet_quad(mat, /):
+                return xyz2aet_matrix @ mat @ xyz2aet_matrix.T
+
+            def aet2xyz_quad(mat, /):
+                return aet2xyz_matrix @ mat @ aet2xyz_matrix.T
+
+            assert output.shape == (3, 3, nf, nt)
+            output_aet = np.array(xyz2aet_quad(output.transpose(2, 3, 0, 1)))
+            assert output_aet.shape == (nf, nt, 3, 3)
+            output_aet[:, :, 0, 2] = 0.0
+            output_aet[:, :, 2, 0] = 0.0
+            output_aet[:, :, 1, 2] = 0.0
+            output_aet[:, :, 2, 1] = 0.0
+            output_aet[:, :, 2, 2] = 0.0
+            output = aet2xyz_quad(output_aet).transpose(2, 3, 0, 1)
+            assert output.shape == (3, 3, nf, nt)
+
         if plot_flag:
-            sm.fdata_response_mat = integral
+            sm.fdata_response_mat = output
         else:
-            sm.response_mat = integral
-            sm.inj_response_mat = integral
+            sm.response_mat = output
+            sm.inj_response_mat = output
 
 
 def get_sparse_tf_grid(times, freqs):
@@ -447,14 +461,23 @@ def mich_response_unconvolved(t, f, n, orbits):
 
     # This loop intentionally uses python control flow so that it is
     # unrolled in tracing and the channels (c1, c2) are trace-time known.
+    lvs = get_link_vectors(t, orbits)
+    assert lvs.shape == (6, 3)
+    z = jnp.zeros(3)
+    links = jnp.array([[z, lvs[0], lvs[3]], [lvs[5], z, lvs[1]], [lvs[2], lvs[4], z]])
     for c1 in range(3):
         for c2 in range(c1, 3):
+            omega = 2 * jnp.pi * f
+            nuc = -jnp.dot(n, links[c1, c2] * ARMLENGTH) / CLIGHT
+            phase = jnp.exp(-1j * omega * nuc)
             fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
             fp2 = mich_antenna_pattern(t, f, n, "plus", c2, orbits)
             fc1 = mich_antenna_pattern(t, f, n, "cross", c1, orbits)
             fc2 = mich_antenna_pattern(t, f, n, "cross", c2, orbits)
             chex.assert_shape([fp1, fp2, fc1, fc2], ())
-            res = res.at[c1, c2].set(0.5 * (fp1.conj() * fp2 + fc1.conj() * fc2))
+            res = res.at[c1, c2].set(
+                0.5 * (fp1.conj() * fp2 + fc1.conj() * fc2) * phase
+            )
             if c1 != c2:
                 res = res.at[c2, c1].set(res[c1, c2].conj())
 
@@ -462,7 +485,87 @@ def mich_response_unconvolved(t, f, n, orbits):
     return res
 
 
-def compute_orbits(times):
+def compute_orbits(times, use_lisaorbits=False):
+    """
+    Compute orbit information at specified time array.
+
+    Parameters
+    ----------
+    times : array 1D
+        Times at which the positions of the spacecraft and link vectors should be
+        computed.
+
+    Returns
+    -------
+    array 1D
+        the input times array
+    array (3, ntimes, 3)
+        Spacecraft positions in ecliptic cartesian coordinates as an array, where the
+        first dimension specifies the spacecraft.
+    array (6, ntimes, 3)
+        Single link unit vectors in lisaorbits order.
+    """
+    chex.assert_rank(times, 1)
+
+    if use_lisaorbits:
+        return _orbits_from_lisaorbits(times)
+
+    ## Semimajor axis in m
+    a = 1.496e11
+
+    ## Alpha and beta phases allow for changing of initial satellite orbital phases; default initial conditions are alphaphase=betaphase=0.
+    betaphase = 0
+    alphaphase = 0
+
+    ## Orbital angle alpha(t)
+    at = (2 * jnp.pi / 31557600) * times + alphaphase
+
+    ## Eccentricity. L-dependent, so needs to be altered for time-varied arm length case.
+    e = ARMLENGTH / (2 * a * jnp.sqrt(3))
+
+    ## Initialize arrays
+    beta_n = (2 / 3) * jnp.pi * jnp.array([0, 1, 2]) + betaphase
+
+    ## meshgrid arrays
+    Beta_n, Alpha_t = jnp.meshgrid(beta_n, at)
+
+    ## Calculate inclination and positions for each satellite.
+    x_n = a * jnp.cos(Alpha_t) + a * e * (
+        jnp.sin(Alpha_t) * jnp.cos(Alpha_t) * jnp.sin(Beta_n)
+        - (1 + (jnp.sin(Alpha_t)) ** 2) * jnp.cos(Beta_n)
+    )
+    y_n = a * jnp.sin(Alpha_t) + a * e * (
+        jnp.sin(Alpha_t) * jnp.cos(Alpha_t) * jnp.cos(Beta_n)
+        - (1 + (jnp.cos(Alpha_t)) ** 2) * jnp.sin(Beta_n)
+    )
+    z_n = -jnp.sqrt(3) * a * e * jnp.cos(Alpha_t - Beta_n)
+
+    ## Construct position vectors r_n
+    rs1 = jnp.array([x_n[:, 0], y_n[:, 0], z_n[:, 0]])
+    rs2 = jnp.array([x_n[:, 1], y_n[:, 1], z_n[:, 1]])
+    rs3 = jnp.array([x_n[:, 2], y_n[:, 2], z_n[:, 2]])
+
+    chex.assert_shape([rs1, rs2, rs3], (3, times.shape[0]))
+    sc_positions = jnp.stack([rs1.T, rs2.T, rs3.T])
+
+    lv12 = rs1 - rs2
+    lv23 = rs2 - rs3
+    lv31 = rs3 - rs1
+    lv12 = lv12 / jnp.linalg.norm(lv12, axis=0)[jnp.newaxis, :]
+    lv23 = lv23 / jnp.linalg.norm(lv23, axis=0)[jnp.newaxis, :]
+    lv31 = lv31 / jnp.linalg.norm(lv31, axis=0)[jnp.newaxis, :]
+    lv13 = -lv31
+    lv32 = -lv23
+    lv21 = -lv12
+    link_vectors = jnp.stack([lv12.T, lv23.T, lv31.T, lv13.T, lv32.T, lv21.T])
+
+    chex.assert_shape(sc_positions, (3, times.shape[0], 3))
+    chex.assert_shape(link_vectors, (6, times.shape[0], 3))
+
+    return (times, sc_positions, link_vectors)
+
+
+def _orbits_from_lisaorbits(times):
     """
     Compute orbit information at specified time array.
 
@@ -636,7 +739,7 @@ def timing_transfer_fn(f, costheta):
     return res
 
 
-def mich_detector_tensor(f, u, v, n, r):
+def mich_detector_tensor(f, u, v, n, r, with_phase=False):
     """
     Michelson channel detector tensor.
 
@@ -654,6 +757,8 @@ def mich_detector_tensor(f, u, v, n, r):
         normalized vector in the direction of the GW source
     r : array (3,)
         position of vertex S/C in barycentric ecliptic cartesian coordinates
+    with_phase : bool, optional
+        whether to include the complex phase factor. Defaults to False
 
     Returns
     -------
@@ -677,7 +782,10 @@ def mich_detector_tensor(f, u, v, n, r):
     chex.assert_shape([tun, tvn], ())
 
     # factor disagrees with Romano & Cornish (-1j -> +1j)
-    factor = jnp.exp(-1j * omega * nr / CLIGHT)
+    if with_phase:
+        factor = jnp.exp(-1j * omega * nr / CLIGHT)
+    else:
+        factor = 1.0
     result = 0.5 * factor * (tun * uu - tvn * vv)
 
     chex.assert_shape(result, (3, 3))
@@ -816,7 +924,7 @@ def mich_antenna_pattern(t, f, n, polarization: str, channel, orbits):
     sc = channel + 1
     u, v = arm_orientations(t, sc, orbits)
     r = get_orbital_positions(t, orbits)[sc - 1]
-    det_tens = mich_detector_tensor(f, u, v, n, r)
+    det_tens = mich_detector_tensor(f, u, v, n, r, with_phase=False)
 
     chex.assert_shape([det_tens, pol_tens], (3, 3))
     res = jnp.tensordot(det_tens, pol_tens)
