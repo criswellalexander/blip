@@ -327,8 +327,6 @@ class Population():
         ## np.histogram computes p((1/dfbin)*h^2|f) x N_unres x dfbin
         ## PSD should be p(h^2|f) x N_unres / dfbin
         fg_PSD_binned = fg_hist_binned * (t_obs*bin_width)
-        print(t_obs)
-        print(bin_width)
     
         ## get running median if needed
         if plot or return_median:
