@@ -1,6 +1,5 @@
 import numpy as np
 import numpy.linalg as LA
-#from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 import healpy as hp
 from blip.src.sph_geometry import sph_geometry
@@ -8,14 +7,17 @@ from blip.src.sph_geometry import sph_geometry
 class geometry(sph_geometry):
 
     '''
-    Module containing geometry methods. The methods here include calculation of antenna patters for a single doppler channel, for the three michelson channels or for the AET TDI channels and calculation of noise power spectra for various channel combinations.
+    Module containing geometry methods. The methods here include calculation of antenna patterns for
+    a single doppler channel, for the three michelson channels or for the AET TDI channels and
+    calculation of noise power spectra for various channel combinations.
     '''
 
-    def __init__(self):
+    def __init__(self, params: dict, inj: dict, injection: bool):
+        self.params = params
+        self.inj = inj
+        self.injection = injection
 
         if (not self.injection and self.params['sph_flag']) or (self.injection and self.inj['sph_flag']):
-        
-#        if self.params['sph_flag'] or self.inj['sph_flag']:
             sph_geometry.__init__(self)
 
 
@@ -951,6 +953,8 @@ class geometry(sph_geometry):
 
 
             ## Michelson antenna patterns
+            ## these are using the origin as the center of the constellation, assuming an equilateral formation
+            ## convention for sign of n (omegahat) agrees with Banagiri+21, i.e. from the GW source
             ## Calculate Fplus
             Fplus1 = 0.5*(Fplus_u*gammaU_plus - Fplus_v*gammaV_plus)*np.exp(-1j*f0[ii]*(udir + vdir)/np.sqrt(3)) 
             Fplus2 = 0.5*(Fplus_w*gammaW_plus - Fplus_u*gammaU_minus)*np.exp(-1j*f0[ii]*(-udir + vdir)/np.sqrt(3))

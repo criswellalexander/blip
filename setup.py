@@ -21,10 +21,10 @@ setup(
     package_dir={"blip":"blip"},
     scripts=["blip/run_blip"],
     install_requires=[
-        "numpy>=2.0",
+        "numpy>=2.0,<2.4",
         "matplotlib",
         "healpy",
-        "scipy",
+        "scipy>=1.15",  # require sph_harm_y
         "astropy",
         "pandas",
         "corner",
@@ -34,7 +34,10 @@ setup(
         "dynesty",
         "emcee",
         "numpyro",
-        "jax"
+        "jax",
+        "chex",
+        "lisaorbits>=3.0",
+        "h5py",
     ],
     extras_require={
             "gpu":["jax[cuda12]"]},
