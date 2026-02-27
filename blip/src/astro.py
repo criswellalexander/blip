@@ -75,7 +75,7 @@ class Population():
             self.frange_true = self.fftfreqs[np.logical_and(self.fftfreqs >=  self.params['fmin'] , self.fftfreqs <=  self.params['fmax'])]
             self.Sgw = self.PSD
             ## reweight to match what we are injecting at data frequencies
-            self.Sgw_true = self.PSD_true * (self.params['seglen']/self.params['tsplice'])
+            self.Sgw_true = self.PSD_true #* (self.params['seglen']/self.params['tsplice'])
         
         
     def rebin_PSD(self,fs_new):
@@ -310,7 +310,6 @@ class Population():
         bin_width = frange[1] - frange[0]
         bin_widths = bin_width
         bins = np.append(frange - bin_width/2,frange[-1]+bin_width/2)
-        
         ## get strain squared power
         PSDs_unres = cls.get_binary_psd(hs,cos_incs,bin_width)
 
@@ -326,7 +325,7 @@ class Population():
 
         ## np.histogram computes p((1/dfbin)*h^2|f) x N_unres x dfbin
         ## PSD should be p(h^2|f) x N_unres / dfbin
-        fg_PSD_binned = fg_hist_binned * (t_obs*bin_width)
+        fg_PSD_binned = fg_hist_binned #/ (bin_width)
     
         ## get running median if needed
         if plot or return_median:

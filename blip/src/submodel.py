@@ -483,7 +483,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                 self.fancyname = popdict['name']
             else:
                 self.fancyname = "DWD Population"+submodel_count
-            self.population = Population(self.params,self.inj,self.fs,popdict)
+            self.population = Population(self.params,self.inj,self.fs,popdict,seed=params['seed'])
             self.compute_Sgw = self.population.Sgw_wrapper
             self.omegaf = self.population.omegaf_wrapper
             self.ispop = True
@@ -707,7 +707,7 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
                         self.fancyname = popdict['name']
                     else:
                         self.fancyname = "DWD Population"+submodel_count
-                    self.population = Population(self.params,self.inj,self.fs,popdict)
+                    self.population = Population(self.params,self.inj,self.fs,popdict,seed=params['seed'])
                 self.skymap = self.population.skymap
             ## inference models
             elif self.spatial_model_name == 'fixedgalaxy':

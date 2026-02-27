@@ -194,7 +194,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
                     ## normalize skymap such that it integrates to 1 over the sky
                     skymap_normalized = sm.skymap / (jnp.sum(sm.skymap) * dOmega)
-
                     for i, response_sparse in zip(active_pixels_idx, responses_sparse):
                         response = _interpolate(response_sparse)
                         output += skymap_normalized[i] * response * dOmega
