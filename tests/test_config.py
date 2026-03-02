@@ -13,13 +13,16 @@ TRUEVALS = {
 }
 
 
-def test_default_params():
-    try:
-        parse_config(os.path.join(blip_root_dir, "params_default.ini"), resume=True)
-        parse_config(os.path.join(blip_root_dir, "params_simple.ini"), resume=True)
-        parse_config(os.path.join(blip_root_dir, "params_test.ini"), resume=True)
-    except:  # noqa: E722
-        assert False, "One of the default config files is invalid!"
+@pytest.mark.parametrize(
+    ["filename"],
+    [
+        ("params_default.ini",),
+        ("params_simple.ini",),
+        ("params_test.ini",),
+    ],
+)
+def test_default_params(filename):
+    parse_config(os.path.join(blip_root_dir, filename), resume=True)
 
 
 @pytest.mark.parametrize(
@@ -44,4 +47,4 @@ def test_model_spec_errors(specs, expectation):
 
 def test_file_not_found(tmp_path):
     with raises(FileNotFoundError):
-        parse_config(tmp_path/"inexistent.ini", resume=False)
+        parse_config(tmp_path / "inexistent.ini", resume=False)
