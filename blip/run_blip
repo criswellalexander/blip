@@ -196,12 +196,6 @@ class LISA(LISAdata, Model):
         
         Used to be the initialization of the (now defunct) likelihoods.py
         '''
-        self.r12 = np.conj(self.r1)*self.r2
-        self.r13 = np.conj(self.r1)*self.r3
-        self.r21 = np.conj(self.r2)*self.r1
-        self.r23 = np.conj(self.r2)*self.r3
-        self.r31 = np.conj(self.r3)*self.r1
-        self.r32 = np.conj(self.r3)*self.r2
         self.rbar = np.stack((self.r1, self.r2, self.r3), axis=2)
 
         ## create a data correlation matrix
