@@ -42,12 +42,14 @@ from lisaconstants import SPEED_OF_LIGHT as CLIGHT, ASTRONOMICAL_YEAR as YEAR
 
 from . import submodel
 
-ARMLENGTH = 2.5e9
-FSTAR = CLIGHT / (2 * jnp.pi * ARMLENGTH)
-
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 # logger.addHandler(logging.StreamHandler())
+
+ARMLENGTH = 2.5e9
+FSTAR = CLIGHT / (2 * jnp.pi * ARMLENGTH)
+
+INTERPOLATION_ALLOWED = False
 
 
 # This is the only procedure where plain numpy is used.
@@ -99,7 +101,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     del sm  # deleted to prevent accidental use out of scope as in issue #28
 
     assert params["lisa_config"] == "orbiting"
-    orbits = compute_orbits(times)
 
     npix = hp.nside2npix(params["nside"])
     is_fullsky = any([getattr(sm, "fullsky", None) for sm in submodels])
@@ -134,10 +135,17 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
     mru_vec2 = jit(_mru_vec2)
 
     # Set up sparse grid for interpolation
-    times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
+    if INTERPOLATION_ALLOWED:
+        times_sparse, freqs_sparse = get_sparse_tf_grid(times, freqs)
+        _interpolate = get_response_interpolator(
+            times, freqs, times_sparse, freqs_sparse
+        )
+        _interpolate = jit(_interpolate)
+    else:
+        times_sparse, freqs_sparse = times, freqs
+        _interpolate = lambda x: x  # noqa: E731
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
-    _interpolate = get_response_interpolator(times, freqs, times_sparse, freqs_sparse)
-    _interpolate = jit(_interpolate)
+    orbits = compute_orbits(times_sparse)
 
     ## check runtime, memory use
     _compiled = mru_vec2.lower(
@@ -350,14 +358,26 @@ def get_sparse_tf_grid(times, freqs):
         sparse frequency grid
     """
     chex.assert_rank([times, freqs], 1)
-    _ = times
 
-    # approx 52 weeks, two per week, including endpoint. Used in periodic interpolation.
-    # TODO optimize for times[-1] < YEAR
-    times_sparse = jnp.linspace(0, YEAR, 105)
+    if len(times) == 1:
+        times_sparse = times
+    else:
+        dt = times[1] - times[0]
+        dt_s = 3600  # one hour
+        if dt > dt_s:
+            times_sparse = times
+        else:
+            times_sparse = jnp.arange(times[0], times[-1], dt_s)
 
-    # linear grid of step 1 mHz is largely enough (response variation insignificant)
-    freqs_sparse = jnp.arange(freqs[0], freqs[-1], 1e-3)
+    if len(freqs) == 1 or freqs[-1] > 10e-3:
+        freqs_sparse = freqs
+    else:
+        df = freqs[1] = freqs[0]
+        df_s = 1e-4  # 0.1 mHz
+        if df > df_s:
+            freqs_sparse = freqs
+        else:
+            freqs_sparse = jnp.arange(freqs[0], freqs[-1], df_s)
 
     chex.assert_rank([times_sparse, freqs_sparse], 1)
     return times_sparse, freqs_sparse
@@ -395,22 +415,46 @@ def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
     chex.assert_rank([times, freqs, times_sparse, freqs_sparse], 1)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
 
-    interp_vect = vmap(lambda r: jnp.interp(times, times_sparse, r, period=YEAR))
+    interp_vect = vmap(lambda r: jnp.interp(times, times_sparse, r))
     interp_vecf = vmap(lambda r: jnp.interp(freqs, freqs_sparse, r))
 
     def interpolator(response_sparse):
         chex.assert_shape(response_sparse, (3, 3, nf_s, nt_s))
 
-        rs_batched_t = response_sparse.reshape((-1, nt_s))
-        response_sparse_f = interp_vect(rs_batched_t).reshape((3, 3, nf_s, nt))
+        # Global idea:
+        #       interp time         interp freq
+        # rs1 --------------> rs2 --------------> rs3.
 
-        rsf_batched_f = response_sparse_f.transpose(0, 1, 3, 2).reshape((-1, nf_s))
-        response = (
-            interp_vecf(rsf_batched_f).reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
-        )
+        # interpolate magnitude and phase separately to avoid large magnitude errors.
+        rs1 = response_sparse
+        rs1_mag = jnp.abs(rs1)
+        rs1_phs = jnp.angle(rs1)
+        rs1_phs = jnp.unwrap(rs1_phs, axis=3)
 
-        chex.assert_shape(response, (3, 3, nf, nt))
-        return response
+        # rs1b = rs1, reshaped for interpolation along times
+        rs1b_mag = rs1_mag.reshape((-1, nt_s))
+        rs1b_phs = rs1_phs.reshape((-1, nt_s))
+
+        rs2b_mag = interp_vect(rs1b_mag)
+        rs2b_phs = interp_vect(rs1b_phs)
+
+        rs2_mag = rs2b_mag.reshape((3, 3, nf_s, nt))
+        rs2_phs = rs2b_phs.reshape((3, 3, nf_s, nt))
+        rs2_phs = jnp.unwrap(rs2_phs, axis=2)
+
+        # rs2c = rs2, reshaped for interpolation along frequencies
+        rs2c_mag = rs2_mag.transpose(0, 1, 3, 2).reshape((-1, nf_s))
+        rs2c_phs = rs2_phs.transpose(0, 1, 3, 2).reshape((-1, nf_s))
+
+        rs3c_mag = interp_vecf(rs2c_mag)
+        rs3c_phs = interp_vecf(rs2c_phs)
+
+        rs3c = rs3c_mag * jnp.exp(1j * rs3c_phs)
+
+        rs3 = rs3c.reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
+
+        chex.assert_shape(rs3, (3, 3, nf, nt))
+        return rs3
 
     return interpolator
 
