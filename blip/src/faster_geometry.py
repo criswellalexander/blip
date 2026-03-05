@@ -521,7 +521,7 @@ def mich_response_unconvolved(t, f, n, orbits):
     return res
 
 
-def compute_orbits(times, use_lisaorbits=False):
+def compute_orbits(times, use_lisaorbits=False, betaphase=0):
     """
     Compute orbit information at specified time array.
 
@@ -550,7 +550,6 @@ def compute_orbits(times, use_lisaorbits=False):
     a = 1.496e11
 
     ## Alpha and beta phases allow for changing of initial satellite orbital phases; default initial conditions are alphaphase=betaphase=0.
-    betaphase = 0
     alphaphase = 0
 
     ## Orbital angle alpha(t)
