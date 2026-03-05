@@ -203,9 +203,7 @@ def mich_detector_tensor(f, u, v, n, r):
     tvn = timing_transfer_fn(f, vn)
     chex.assert_shape([tun, tvn], ())
 
-    # The following factor disagrees with Romano & Cornish (-1j -> +1j)
-    factor = jnp.exp(-1j * omega * nr / CLIGHT)
-
+    factor = jnp.exp(1j * omega * nr / CLIGHT)
     result = 0.5 * factor * (tun * uu - tvn * vv)
 
     chex.assert_shape(result, (3, 3))

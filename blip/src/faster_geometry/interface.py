@@ -162,7 +162,6 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
             assert False
 
         rmat = _mich_to_tdi(rmat, freqs, params, postf_dims)
-        rmat = _workaround_t_channel(rmat, sm, nt, nf)
 
         # Assert postconditions for clarity: output shape and dtype.
         output_shape = (3, 3, nf, nt)
@@ -319,39 +318,6 @@ def _mich_to_tdi(rmat, freqs, params, postf_dims):
     elif params["tdi_lev"] == "aet":
         # TODO
         raise NotImplementedError
-
-    return rmat
-
-
-def _workaround_t_channel(rmat, sm, nt, nf):
-    # set T channel response to zero to avoid inference problems with IFE data.
-    # FIXME this should not be needed.
-    if not (sm.has_map and sm.parameterized_map):
-        xyz2aet_matrix = jnp.array(
-            [
-                jnp.array([-1, 0, 1]) / jnp.sqrt(2),
-                jnp.array([1, -2, 1]) / jnp.sqrt(6),
-                jnp.array([1, 1, 1]) / jnp.sqrt(3),
-            ]
-        )
-        aet2xyz_matrix = xyz2aet_matrix.T
-
-        def xyz2aet_quad(mat, /):
-            return xyz2aet_matrix @ mat @ xyz2aet_matrix.T
-
-        def aet2xyz_quad(mat, /):
-            return aet2xyz_matrix @ mat @ aet2xyz_matrix.T
-
-        assert rmat.shape == (3, 3, nf, nt)
-        rmat_aet = np.array(xyz2aet_quad(rmat.transpose(2, 3, 0, 1)))
-        assert rmat_aet.shape == (nf, nt, 3, 3)
-        rmat_aet[:, :, 0, 2] = 0.0
-        rmat_aet[:, :, 2, 0] = 0.0
-        rmat_aet[:, :, 1, 2] = 0.0
-        rmat_aet[:, :, 2, 1] = 0.0
-        rmat_aet[:, :, 2, 2] = 0.0
-        rmat = aet2xyz_quad(rmat_aet).transpose(2, 3, 0, 1)
-        assert rmat.shape == (3, 3, nf, nt)
 
     return rmat
 

@@ -34,7 +34,7 @@ def interp_patch(draw):
     fmax = 10e-3
 
     # size of sparse grid (tune this)
-    dt_s = 12 * 3600
+    dt_s = 3600
     df_s = 1e-4
 
     # rectangle of sparse grid points
@@ -59,26 +59,6 @@ def direction(draw):
     return jnp.array([sint * cosp, sint * sinp, cost])
 
 
-@example(
-    ((0.0, 1.0, 3600.0), (0.0078125, 0.0078125, 0.0079125)),
-    jnp.array([0.47942554, 0.0, 0.87758256]),
-)
-@example(
-    (
-        (0.0, 0.0, 3600.0),
-        (0.0005835943283123456, 0.0006474497657475774, 0.0006835943283123457),
-    ),
-    jnp.array([0.90352311, 0.0, -0.42853936]),
-)
-@example(
-    ((42601709.0, 42605200.0, 42605309.0), (0.001953125, 0.001953125, 0.002053125)),
-    jnp.array([0.9026844, 0.0, -0.43030323]),
-)
-@example(
-    ((21355701.0, 21394281.0, 21398901.0), (0.0078125, 0.0078125, 0.0079125)),
-    jnp.array([0.0, 0.0, 1.0]),
-)
-@pytest.mark.skip
 @given(interp_patch(), direction())
 def test_interpolation(patch, n):
     (t0, t, t1), (f0, f, f1) = patch
@@ -119,8 +99,8 @@ def test_interpolation(patch, n):
     # in the middle, interpolation should give reasonable results
     maxabs = jnp.max(jnp.abs(resp[:, :, 1, 1]))
     absdiff = jnp.max(jnp.abs(resp - resp_interp)[:, :, 1, 1])
-    reldiff = jnp.max(jnp.abs((resp - resp_interp) / resp)[:, :, 1, 1])
-    note(f"max rel diff = {reldiff:.2e}")
+    # reldiff = jnp.max(jnp.abs((resp - resp_interp) / resp)[:, :, 1, 1])
+    # note(f"max rel diff = {reldiff:.2e}")
     note(f"max abs diff / max abs resp = {absdiff/maxabs:.2e}")
     note(f"{resp[:,:,1,1] = }")
     note(f"{resp_interp[:,:,1,1] = }")
@@ -197,7 +177,7 @@ def test_armlength(t):
 @given(st.floats(0, YEAR))
 def test_low_freq_limit(t):
     orbits = compute_orbits(jnp.array([t]))
-    f = 1e-6
+    f = 1e-4
     allsky = get_vecs_all_sky(nside=8)
     response = mru_vecn(t, f, allsky, orbits)
     chex.assert_shape(response, (allsky.shape[0], 3, 3))
@@ -211,3 +191,19 @@ def test_low_freq_limit(t):
         for c2 in range(c1 + 1, 3):
             note(f"{c1=}, {c2=}")
             assert jnp.allclose(response[:, c1, c2].mean(), -3 / 40, atol=1e-4)
+
+    # Response in TT, AT, ET should be very small for low frequencies
+    xyz2aet_matrix = jnp.array(
+        [
+            jnp.array([-1, 0, 1]) / jnp.sqrt(2),
+            jnp.array([1, -2, 1]) / jnp.sqrt(6),
+            jnp.array([1, 1, 1]) / jnp.sqrt(3),
+        ]
+    )
+
+    response_aet = jnp.array(xyz2aet_matrix @ response @ xyz2aet_matrix.T)
+    eps = 1e-8  # this precision gets better for lower f.
+    max_resp = jnp.max(jnp.abs(response_aet))
+    assert jnp.max(jnp.abs(response_aet[:, 0, 2])) < eps * max_resp
+    assert jnp.max(jnp.abs(response_aet[:, 1, 2])) < eps * max_resp
+    assert jnp.max(jnp.abs(response_aet[:, 2, 2])) < eps * max_resp
