@@ -8,14 +8,14 @@ from jax import numpy as jnp, vmap, jit
 from lisaconstants import ASTRONOMICAL_YEAR as YEAR
 
 from blip.src.faster_geometry import (
-    get_response_interpolator,
     mich_response_unconvolved,
     compute_orbits,
     get_ortho_basis_ecliptic_3d,
-    all_unit_vecs_healpix,
-    arm_orientations,
+    get_vecs_all_sky,
+    get_arm_orientations,
     ARMLENGTH,
 )
+from blip.src.faster_geometry.interp import get_response_interpolator
 
 jax.config.update("jax_enable_x64", True)
 
@@ -169,15 +169,15 @@ def test_arm_orientations(t):
     times = jnp.array([t])
     orbits = compute_orbits(times)
     for sc in range(1, 4):
-        u, v = arm_orientations(t, sc, orbits)
+        u, v = get_arm_orientations(t, sc, orbits)
         chex.assert_shape([u, v], (3,))
         uv = jnp.dot(u, v)
         # cos(60 deg) = 1/2
         assert jnp.allclose(uv, 0.5)
 
-    u1, v1 = arm_orientations(t, 1, orbits)
-    u2, v2 = arm_orientations(t, 2, orbits)
-    u3, v3 = arm_orientations(t, 3, orbits)
+    u1, v1 = get_arm_orientations(t, 1, orbits)
+    u2, v2 = get_arm_orientations(t, 2, orbits)
+    u3, v3 = get_arm_orientations(t, 3, orbits)
     assert jnp.allclose(v1, -u3)
     assert jnp.allclose(u1, -v2)
     assert jnp.allclose(u2, -v3)
@@ -198,7 +198,7 @@ def test_armlength(t):
 def test_low_freq_limit(t):
     orbits = compute_orbits(jnp.array([t]))
     f = 1e-6
-    allsky = all_unit_vecs_healpix(nside=8)
+    allsky = get_vecs_all_sky(nside=8)
     response = mru_vecn(t, f, allsky, orbits)
     chex.assert_shape(response, (allsky.shape[0], 3, 3))
 
