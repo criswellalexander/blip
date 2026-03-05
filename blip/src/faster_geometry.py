@@ -504,22 +504,15 @@ def mich_response_unconvolved(t, f, n, orbits):
 
     # This loop intentionally uses python control flow so that it is
     # unrolled in tracing and the channels (c1, c2) are trace-time known.
-    lvs = get_link_vectors(t, orbits)
-    assert lvs.shape == (6, 3)
-    z = jnp.zeros(3)
-    links = jnp.array([[z, lvs[0], lvs[3]], [lvs[5], z, lvs[1]], [lvs[2], lvs[4], z]])
     for c1 in range(3):
         for c2 in range(c1, 3):
-            omega = 2 * jnp.pi * f
-            nuc = -jnp.dot(n, links[c1, c2] * ARMLENGTH) / CLIGHT
-            phase = jnp.exp(-1j * omega * nuc)
             fp1 = mich_antenna_pattern(t, f, n, "plus", c1, orbits)
             fp2 = mich_antenna_pattern(t, f, n, "plus", c2, orbits)
             fc1 = mich_antenna_pattern(t, f, n, "cross", c1, orbits)
             fc2 = mich_antenna_pattern(t, f, n, "cross", c2, orbits)
             chex.assert_shape([fp1, fp2, fc1, fc2], ())
             res = res.at[c1, c2].set(
-                0.5 * (fp1.conj() * fp2 + fc1.conj() * fc2) * phase
+                0.5 * (fp1.conj() * fp2 + fc1.conj() * fc2)
             )
             if c1 != c2:
                 res = res.at[c2, c1].set(res[c1, c2].conj())
@@ -782,7 +775,7 @@ def timing_transfer_fn(f, costheta):
     return res
 
 
-def mich_detector_tensor(f, u, v, n, r, with_phase=False):
+def mich_detector_tensor(f, u, v, n, r):
     """
     Michelson channel detector tensor.
 
@@ -800,8 +793,6 @@ def mich_detector_tensor(f, u, v, n, r, with_phase=False):
         normalized vector in the direction of the GW source
     r : array (3,)
         position of vertex S/C in barycentric ecliptic cartesian coordinates
-    with_phase : bool, optional
-        whether to include the complex phase factor. Defaults to False
 
     Returns
     -------
@@ -825,10 +816,7 @@ def mich_detector_tensor(f, u, v, n, r, with_phase=False):
     chex.assert_shape([tun, tvn], ())
 
     # factor disagrees with Romano & Cornish (-1j -> +1j)
-    if with_phase:
-        factor = jnp.exp(-1j * omega * nr / CLIGHT)
-    else:
-        factor = 1.0
+    factor = jnp.exp(-1j * omega * nr / CLIGHT)
     result = 0.5 * factor * (tun * uu - tvn * vv)
 
     chex.assert_shape(result, (3, 3))
@@ -967,7 +955,7 @@ def mich_antenna_pattern(t, f, n, polarization: str, channel, orbits):
     sc = channel + 1
     u, v = arm_orientations(t, sc, orbits)
     r = get_orbital_positions(t, orbits)[sc - 1]
-    det_tens = mich_detector_tensor(f, u, v, n, r, with_phase=False)
+    det_tens = mich_detector_tensor(f, u, v, n, r)
 
     chex.assert_shape([det_tens, pol_tens], (3, 3))
     res = jnp.tensordot(det_tens, pol_tens)
