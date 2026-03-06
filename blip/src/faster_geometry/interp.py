@@ -66,9 +66,10 @@ def get_sparse_tf_grid(times, freqs):
         else:
             freqs_sparse = jnp.arange(freqs[0], freqs[-1], df_s)
             if freqs[-1] > FMAX_SPARSE:
-                logger.info(
+                logger.warning(
                     f"max freq is {freqs[-1]:.2e} > {FMAX_SPARSE:.2e}"
-                    " but allowing interpolation anyway"
+                    f" but allowing interpolation anyway. Make sure your model spectrum"
+                    f" is insignificant after f = {FMAX_SPARSE:.2e}"
                 )
 
     chex.assert_rank([times_sparse, freqs_sparse], 1)
