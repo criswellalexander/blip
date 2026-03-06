@@ -8,6 +8,8 @@ The main objective is to compute the LISA response for a given sky direction, fr
 and time. This is done in :func:`mich_response_unconvolved`.
 """
 
+import logging
+
 from .interface import calculate_response_functions
 from .core import (
     mich_response_unconvolved,
@@ -42,3 +44,7 @@ __all__ = [
     "get_sc_positions",
     "get_vecs_all_sky",
 ]
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # TODO set this in run_blip, use config option
+logger.addHandler(logging.StreamHandler())

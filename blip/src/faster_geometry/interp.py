@@ -1,5 +1,7 @@
 """Sparse grids and interpolation."""
 
+import logging
+
 import chex
 from jax import numpy as jnp, vmap
 
@@ -11,6 +13,9 @@ __all__ = [
     "FMAX_SPARSE",
     "TOL_INTERP",
 ]
+
+logger = logging.getLogger(__name__)
+
 
 # Inside rectangular patches of sides (DT_SPARSE, DF_SPARSE), with frequencies no more
 # than FMAX_SPARSE, we guarantee interpolation precision TOL_INTERP.
@@ -45,21 +50,26 @@ def get_sparse_tf_grid(times, freqs):
         times_sparse = times
     else:
         dt = times[1] - times[0]
-        dt_s = 2 * 86400  # two days
+        dt_s = DT_SPARSE
         if dt > dt_s:
             times_sparse = times
         else:
             times_sparse = jnp.arange(times[0], times[-1], dt_s)
 
-    if len(freqs) == 1 or freqs[-1] > 10e-3:
+    if len(freqs) == 1:  # or freqs[-1] > FMAX_SPARSE:
         freqs_sparse = freqs
     else:
-        df = freqs[1] = freqs[0]
-        df_s = 1e-3  # 1 mHz
+        df = freqs[1] - freqs[0]
+        df_s = DF_SPARSE
         if df > df_s:
             freqs_sparse = freqs
         else:
             freqs_sparse = jnp.arange(freqs[0], freqs[-1], df_s)
+            if freqs[-1] > FMAX_SPARSE:
+                logger.info(
+                    f"max freq is {freqs[-1]:.2e} > {FMAX_SPARSE:.2e}"
+                    " but allowing interpolation anyway"
+                )
 
     chex.assert_rank([times_sparse, freqs_sparse], 1)
     return times_sparse, freqs_sparse

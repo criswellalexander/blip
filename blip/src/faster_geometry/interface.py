@@ -22,6 +22,8 @@ from ..submodel import submodel
 
 __all__ = ["calculate_response_functions"]
 
+logger = logging.getLogger(__name__)
+
 _GridInfo = namedtuple(
     "GridInfo",
     ["nf", "nt", "nf_s", "nt_s", "times", "freqs", "times_sparse", "freqs_sparse"],
@@ -91,6 +93,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
 
     # Set up sparse grid for interpolation
     if INTERPOLATION_ALLOWED:
+        logger.info("Using interpolation")
         times_s, freqs_s = get_sparse_tf_grid(times, freqs)
         interpolator = get_response_interpolator(times, freqs, times_s, freqs_s)
         interpolator = jit(interpolator)
@@ -328,10 +331,6 @@ def _log_performance_analysis(mru_vec2, gridinfo, skyinfo, orbits):
     freqs = gridinfo.freqs
     nt_s = gridinfo.nt_s
     nf_s = gridinfo.nf_s
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(logging.StreamHandler())
 
     ## check runtime, memory use
     _compiled = mru_vec2.lower(
