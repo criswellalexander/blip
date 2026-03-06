@@ -122,11 +122,10 @@ def test_interpolation_response(patch, n, tol):
 
 
 @given(interp_patch(), st.floats(1, 10), st.floats(1, 10))
-def test_interpolation_real_affine(patch, a, b):
-    # Here we make sure that for real numbers the interpolation is just linear
-    # interpolation.
-    # For this we are going to interpolate an affine function:
-    # g(f, t) = a*f + b*t.
+def test_interpolation_scalar_affine(patch, a, b):
+    # Here we make sure that the interpolation is just simple linear interpolation.
+    # For this we are going to interpolate an affine, complex-valued function:
+    # g(f,t) = a*f + (1+1j)*b*t.
 
     (t0, t, t1), (f0, f, f1) = patch
     note(f"{(t-t0)/(t1-t0) = }")
