@@ -116,10 +116,6 @@ def test_interpolation_response(patch, n, tol):
     note(f"{resp_interp[:,:,1,1] = }")
     assert absdiff < tol * maxabs
 
-    # NOTE this test shows that accurate interpolation needs a sparse grid with time and
-    # frequency steps that are impractically small, which is why interpolation is now
-    # disabled by default.
-
 
 @given(interp_patch(), st.floats(1, 10), st.floats(1, 10))
 def test_interpolation_scalar_affine(patch, a, b):
