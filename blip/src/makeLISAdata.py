@@ -225,7 +225,7 @@ class LISAdata():
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
         for ii in tqdm(range(self.injection.nsplice), desc=injmodel.name, unit="splice"):
             # Do Cholesky decomposition assuming certain symmetries
-            L_cholesky = _cholesky_symm(injmodel.response_mat[:, :, :, ii])
+            L_cholesky = cholesky_symm(injmodel.response_mat[:, :, :, ii])
             L_cholesky = xp.moveaxis(L_cholesky, -1, 0)
             # multiply by ASD
             L_cholesky = norms[:, xp.newaxis, xp.newaxis] * L_cholesky
@@ -551,7 +551,7 @@ class LISAdata():
         return h1, h2, h3, times
 
 
-def _cholesky_symm(m):
+def cholesky_symm(m):
     r"""Cholesky decomposition of response matrix.
 
     Parameters
