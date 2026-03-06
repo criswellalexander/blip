@@ -16,5 +16,5 @@ ARMLENGTH = 2.5e9
 FSTAR = CLIGHT / (2 * math.pi * ARMLENGTH)
 
 # Configuration of faster_geometry
-INTERPOLATION_ALLOWED = False
+INTERPOLATION_ALLOWED = True
 LOG_PERFORMANCE = False

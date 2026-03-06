@@ -3,7 +3,22 @@
 import chex
 from jax import numpy as jnp, vmap
 
-__all__ = ["get_sparse_tf_grid", "get_response_interpolator"]
+__all__ = [
+    "get_sparse_tf_grid",
+    "get_response_interpolator",
+    "DT_SPARSE",
+    "DF_SPARSE",
+    "FMAX_SPARSE",
+    "TOL_INTERP",
+]
+
+# Inside rectangular patches of sides (DT_SPARSE, DF_SPARSE), with frequencies no more
+# than FMAX_SPARSE, we guarantee interpolation precision TOL_INTERP.
+# See test_interpolation_response() in test_hyp_faster_geometry.py.
+DT_SPARSE = 2 * 86400  # two days
+DF_SPARSE = 1e-3  # 1 mHz
+FMAX_SPARSE = 10e-3  # 10 mHz
+TOL_INTERP = 2e-3
 
 
 def get_sparse_tf_grid(times, freqs):
@@ -30,7 +45,7 @@ def get_sparse_tf_grid(times, freqs):
         times_sparse = times
     else:
         dt = times[1] - times[0]
-        dt_s = 3600  # one hour
+        dt_s = 2 * 86400  # two days
         if dt > dt_s:
             times_sparse = times
         else:
@@ -40,7 +55,7 @@ def get_sparse_tf_grid(times, freqs):
         freqs_sparse = freqs
     else:
         df = freqs[1] = freqs[0]
-        df_s = 1e-4  # 0.1 mHz
+        df_s = 1e-3  # 1 mHz
         if df > df_s:
             freqs_sparse = freqs
         else:
@@ -92,31 +107,19 @@ def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
         #       interp time         interp freq
         # rs1 --------------> rs2 --------------> rs3.
 
-        # interpolate magnitude and phase separately to avoid large magnitude errors.
         rs1 = response_sparse
-        rs1_mag = jnp.abs(rs1)
-        rs1_phs = jnp.angle(rs1)
-        rs1_phs = jnp.unwrap(rs1_phs, axis=3)
 
         # rs1b = rs1, reshaped for interpolation along times
-        rs1b_mag = rs1_mag.reshape((-1, nt_s))
-        rs1b_phs = rs1_phs.reshape((-1, nt_s))
+        rs1b = rs1.reshape((-1, nt_s))
 
-        rs2b_mag = interp_vect(rs1b_mag)
-        rs2b_phs = interp_vect(rs1b_phs)
+        rs2b = interp_vect(rs1b)
 
-        rs2_mag = rs2b_mag.reshape((3, 3, nf_s, nt))
-        rs2_phs = rs2b_phs.reshape((3, 3, nf_s, nt))
-        rs2_phs = jnp.unwrap(rs2_phs, axis=2)
+        rs2 = rs2b.reshape((3, 3, nf_s, nt))
 
         # rs2c = rs2, reshaped for interpolation along frequencies
-        rs2c_mag = rs2_mag.transpose(0, 1, 3, 2).reshape((-1, nf_s))
-        rs2c_phs = rs2_phs.transpose(0, 1, 3, 2).reshape((-1, nf_s))
+        rs2c = rs2.transpose(0, 1, 3, 2).reshape((-1, nf_s))
 
-        rs3c_mag = interp_vecf(rs2c_mag)
-        rs3c_phs = interp_vecf(rs2c_phs)
-
-        rs3c = rs3c_mag * jnp.exp(1j * rs3c_phs)
+        rs3c = interp_vecf(rs2c)
 
         rs3 = rs3c.reshape((3, 3, nt, nf)).transpose(0, 1, 3, 2)
 

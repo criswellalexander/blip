@@ -15,7 +15,13 @@ from blip.src.faster_geometry import (
     get_arm_orientations,
     ARMLENGTH,
 )
-from blip.src.faster_geometry.interp import get_response_interpolator
+from blip.src.faster_geometry.interp import (
+    get_response_interpolator,
+    DF_SPARSE,
+    DT_SPARSE,
+    FMAX_SPARSE,
+    TOL_INTERP,
+)
 
 jax.config.update("jax_enable_x64", True)
 
@@ -26,16 +32,16 @@ mru_vec2 = jit(_mru_vec2)
 mru = jit(mich_response_unconvolved)
 mru_vecn = jit(vmap(mich_response_unconvolved, (None, None, 0, None)))
 
+HOUR = 3600
+DAY = 24 * HOUR
+
 
 @st.composite
-def interp_patch(draw):
-    # We are going to guarantee a certain precision only
-    # up to fmax
-    fmax = 10e-3
-
-    # size of sparse grid (tune this)
-    dt_s = 3600
-    df_s = 1e-4
+def interp_patch(draw, fmax=10e-3, dt_s=2 * DAY, df_s=1e-3):
+    # Interpolation patch: a rectangle of sides (dt_s, df_s) with a point (t, f)
+    # somewhere in the middle. fmax is a limit for the frequencies (towards higher
+    # frequencies it gets harder to guarantee precision). The default parameters seem
+    # enough for 2e-3 precision on response interpolation.
 
     # rectangle of sparse grid points
     t0 = draw(st.floats(0, 1.5 * YEAR))
@@ -59,8 +65,12 @@ def direction(draw):
     return jnp.array([sint * cosp, sint * sinp, cost])
 
 
-@given(interp_patch(), direction())
-def test_interpolation(patch, n):
+@given(
+    interp_patch(dt_s=DT_SPARSE, df_s=DF_SPARSE, fmax=FMAX_SPARSE),
+    direction(),
+    st.just(TOL_INTERP),
+)
+def test_interpolation_response(patch, n, tol):
     (t0, t, t1), (f0, f, f1) = patch
 
     note(f"t - t0 = {(t - t0)/3600:.1f} hours")
@@ -104,11 +114,59 @@ def test_interpolation(patch, n):
     note(f"max abs diff / max abs resp = {absdiff/maxabs:.2e}")
     note(f"{resp[:,:,1,1] = }")
     note(f"{resp_interp[:,:,1,1] = }")
-    assert absdiff < 1e-4 * maxabs
+    assert absdiff < tol * maxabs
 
     # NOTE this test shows that accurate interpolation needs a sparse grid with time and
     # frequency steps that are impractically small, which is why interpolation is now
     # disabled by default.
+
+
+@given(interp_patch(), st.floats(1, 10), st.floats(1, 10))
+def test_interpolation_real_affine(patch, a, b):
+    # Here we make sure that for real numbers the interpolation is just linear
+    # interpolation.
+    # For this we are going to interpolate an affine function:
+    # g(f, t) = a*f + b*t.
+
+    (t0, t, t1), (f0, f, f1) = patch
+    note(f"{(t-t0)/(t1-t0) = }")
+    note(f"{(f-f0)/(f1-f0) = }")
+
+    times = jnp.array([t0, t, t1])
+    freqs = jnp.array([f0, f, f1])
+    times_s = jnp.array([t0, t1])
+    freqs_s = jnp.array([f0, f1])
+
+    def g(f, t):
+        return a * f + (1 + 1j) * b * t
+
+    _gvec = vmap(g, (0, None), 0)
+    gvec = vmap(_gvec, (None, 0), 1)
+
+    nf_s, nt_s = 2, 2
+    g_sparse = gvec(freqs_s, times_s)
+    g_sparse = jnp.stack([g_sparse] * 9).reshape(3, 3, nf_s, nt_s)
+
+    # get correct response in the middle
+    g_mid = g(f, t)
+
+    # get interpolation result
+    _interpolate = get_response_interpolator(times, freqs, times_s, freqs_s)
+    g_interp = _interpolate(g_sparse)
+    chex.assert_shape(g_interp, (3, 3, 3, 3))
+
+    #### compare ####
+    # no interpolation at all for borders
+    assert jnp.allclose(g(f0, t0), g_interp[:, :, 0, 0])
+    assert jnp.allclose(g(f0, t1), g_interp[:, :, 0, 2])
+    assert jnp.allclose(g(f1, t0), g_interp[:, :, 2, 0])
+    assert jnp.allclose(g(f1, t1), g_interp[:, :, 2, 2])
+
+    # in the middle, interpolation should be perfect
+    note(f"{g_mid = }")
+    note(f"{g_interp[0,0,1,1] = }")
+    note(f"difference = {g_mid - g_interp[0,0,1,1]}")
+    assert jnp.allclose(g_mid, g_interp[:, :, 1, 1])
 
 
 @given(st.floats(0, YEAR), st.floats(1e-6, 0.1), direction(), st.integers(1, 2))
