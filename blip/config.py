@@ -363,6 +363,11 @@ def parse_config(paramsfile: str, resume: bool):
     inj = {}  # basically receives options from the `inj` section
     misc = {}  # receives a few run parameters and the generated seed
 
+    # Preserve original paramsfile after parsing, for the sake of having a copy.
+    with open(paramsfile) as f:
+        misc["paramsfile_name"] = os.path.basename(paramsfile)
+        misc["paramsfile_text"] = f.read()
+
     config = configparser.ConfigParser()
     config.read_dict(
         {

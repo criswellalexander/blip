@@ -525,36 +525,38 @@ class LISA(LISAdata, Model):
         print('Data spectra plot made in ' + self.params['out_dir'] + '/data_psd.png')
         plt.close()
 
-def blip(paramsfile='params.ini',resume=False):
-    '''
-    The main workhorse of the bayesian pipeline.
 
-    Input:
-    Params File
+def run_pipeline(parsed_params, resume):
+    """Run the Bayesian pipeline.
 
-    Output: Files containing evidence and pdfs of the parameters
-    '''
-
-    params, inj, misc = parse_config(paramsfile, resume)
+    Parameters
+    ----------
+    parsed_params : tuple
+        Parameters for the run as output by :func:`parse_config`.
+    resume : bool
+        Whether to resume a checkpointed run.
+    """
+    params, inj, misc = parsed_params
     nthread = misc["nthread"]
     randst = misc["randst"]
     nlive = misc["nlive"]
     N_GPU = misc["N_GPU"]
 
-
     if not resume:
         # Make directories, copy stuff
         # Make output folder
-        subprocess.call(["mkdir", "-p", params['out_dir']])
-    
+        os.makedirs(params['out_dir'], exist_ok=True)
+
         # Copy the params file to outdir, to keep track of the parameters of each run.
-        subprocess.call(["cp", paramsfile, params['out_dir']])
-        
+        path_paramsfile = os.path.join(params['out_dir'], misc['paramsfile_name'])
+        with open(path_paramsfile, "w") as f:
+            f.write(misc['paramsfile_text'])
+
         # Initialize lisa class
         lisa =  LISA(params, inj)
-        
+
         ## save the Model and Injection as needed
-        
+
         ## the Injection is massive, so discard the responses we no longer need
         ## saving & discarding now, as opposed to at the end of the run also saves space in the checkpoint files.
         if not params['load_data']:
@@ -845,15 +847,31 @@ def blip(paramsfile='params.ini',resume=False):
             mapmaker(post_samples, params, parameters, plotting_Model, coord=params['healpy_proj'], cmap=params['colormap'])
         else:
             mapmaker(post_samples, params, parameters, plotting_Model, cmap=params['colormap'])
-        
+
+
+def blip(paramsfile, *, resume):
+    """Run BLIP on a given parameter file with given command-line options.
+
+    Parameters
+    ----------
+    paramsfile : str
+        Path to INI parameter file.
+    resume : bool
+        CLI option to resume from a checkpointed run.
+    """
+    parsed_params = parse_config(paramsfile, resume)
+    run_pipeline(parsed_params, resume)
+
+
 def main():
     if len(sys.argv) != 2:
-        if sys.argv[2] == 'resume':
-            blip(sys.argv[1],resume=True)
+        if sys.argv[2] == "resume":
+            blip(sys.argv[1], resume=True)
         else:
-            raise ValueError('Provide (only) the params file as an argument')
+            raise ValueError("Provide (only) the params file as an argument")
     else:
-        blip(sys.argv[1])
+        blip(sys.argv[1], resume=False)
+
 
 if __name__ == "__main__":
     main()
