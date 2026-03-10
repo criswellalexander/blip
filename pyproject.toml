@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blip"
+version = "2.0.3"
+license = "MIT"
+authors = [
+  { name="Sharan Banagiri", email="sharan.banagiri@gmail.com" },
+  { name="Alexander Criswell" },
+]
+description = "A Bayesian inference package for characterizing stochastic backgrounds and foregrounds with LISA."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "numpy>=2.0,<2.4",
+    "matplotlib",
+    "healpy",
+    "scipy>=1.15",  # require sph_harm_y
+    "astropy",
+    "pandas",
+    "corner",
+    "sympy",
+    "legwork",
+    "dill",
+    "dynesty",
+    "emcee",
+    "numpyro",
+    "jax",
+    "chex",
+    "lisaorbits>=3.0",
+    "h5py",
+]
+
+[project.urls]
+Repository = "https://github.com/sharanbngr/blip"
+
+[project.optional-dependencies]
+gpu = ["jax[cuda12]"]
+
+[project.scripts]
+run_blip="blip.run_blip:main"
+
+[tool.setuptools.packages.find]
+where=["."]
+include=["blip"]

@@ -846,10 +846,7 @@ def blip(paramsfile='params.ini',resume=False):
         else:
             mapmaker(post_samples, params, parameters, plotting_Model, cmap=params['colormap'])
         
-    
-
-if __name__ == "__main__":
-
+def main():
     if len(sys.argv) != 2:
         if sys.argv[2] == 'resume':
             blip(sys.argv[1],resume=True)
@@ -857,3 +854,6 @@ if __name__ == "__main__":
             raise ValueError('Provide (only) the params file as an argument')
     else:
         blip(sys.argv[1])
+
+if __name__ == "__main__":
+    main()
