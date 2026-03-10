@@ -682,6 +682,8 @@ def parse_config(paramsfile: str, resume: bool):
             sublist.split("-")[0].split("_")[-1]
             for sublist in inj["injection_raw"].split("+")
         ]
+    elif not params["load_data"]:
+        raise ValueError("Either inj.doInj or params.load_data has to be true")
 
     # now that we know the injections and aliases, we can parse the analysis models
     _truevals_all = inj.get("truevals", {})
