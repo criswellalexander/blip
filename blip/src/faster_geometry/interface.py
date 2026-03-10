@@ -124,7 +124,11 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         desc="response",
         unit="pixel",
     ):
-        resp_s.append(mru_vec2(times_s, freqs_s, pix_vec, orbits))
+        # We block on this computation before dispatching the next one to the GPU,
+        # otherwise the progress bar is meaningless. A possible optimization would be
+        # to dispatch the next iteration before blocking on the current one.
+        _r = mru_vec2(times_s, freqs_s, pix_vec, orbits)
+        resp_s.append(_r.block_until_ready())
 
     chex.assert_shape(resp_s[0], (3, 3, nf_s, nt_s))
     chex.assert_equal_shape(resp_s)
