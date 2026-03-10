@@ -48,6 +48,14 @@ Legacy ``geometry`` module
    :undoc-members:
    :show-inheritance:
 
+The experimental ``faster_geometry`` module
+-------------------------------------------
+
+.. automodule:: blip.src.faster_geometry
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ``sph_geometry`` module
 -----------------------
 
@@ -126,14 +134,6 @@ Miscellaneous
 ----------------
 
 .. automodule:: blip.src.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-The experimental ``faster_geometry`` module
--------------------------------------------
-
-.. automodule:: blip.src.faster_geometry
    :members:
    :undoc-members:
    :show-inheritance:
