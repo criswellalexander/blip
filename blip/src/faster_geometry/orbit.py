@@ -6,9 +6,16 @@ from jax import numpy as jnp
 from astropy import units
 from astropy.coordinates import SkyCoord
 
-import lisaorbits
+try:
+    import lisaorbits
+    has_lisaorbits = True
+except ModuleNotFoundError:
+    has_lisaorbits = False
+    pass
 
 from .const import ARMLENGTH
+
+LINKS = [12, 23, 31, 13, 32, 21]
 
 __all__ = [
     "compute_orbits",
@@ -117,6 +124,7 @@ def _orbits_from_lisaorbits(times):
     array (6, ntimes, 3)
         Single link unit vectors in lisaorbits order.
     """
+    assert has_lisaorbits, "lisaorbits is not installed"
     chex.assert_rank(times, 1)
 
     # We are interfacing with non-jax-traceable numpy code:
@@ -178,16 +186,16 @@ def get_arm_orientations(t, sc, orbits):
     # a given spacecraft.
     if sc == 1:
         idx_u, idx_v = 5, 2
-        assert lisaorbits.LINKS[idx_u] == 21
-        assert lisaorbits.LINKS[idx_v] == 31
+        assert LINKS[idx_u] == 21
+        assert LINKS[idx_v] == 31
     elif sc == 2:
         idx_u, idx_v = 4, 0
-        assert lisaorbits.LINKS[idx_u] == 32
-        assert lisaorbits.LINKS[idx_v] == 12
+        assert LINKS[idx_u] == 32
+        assert LINKS[idx_v] == 12
     else:
         idx_u, idx_v = 3, 1
-        assert lisaorbits.LINKS[idx_u] == 13
-        assert lisaorbits.LINKS[idx_v] == 23
+        assert LINKS[idx_u] == 13
+        assert LINKS[idx_v] == 23
 
     lv = get_link_vectors(t, orbits)
     chex.assert_shape(lv, (6, 3))
