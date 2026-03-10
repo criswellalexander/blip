@@ -5,6 +5,14 @@ API documentation
 Core BLIP logic
 ===============
 
+``run_blip`` module
+-------------------
+
+.. automodule:: blip.run_blip
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ``submodel`` module
 -------------------
 

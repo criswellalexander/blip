@@ -1,8 +1,7 @@
 Developer guide
 ===============
 
-The main pipeline logic is in the script ``run_blip``. Currently this is not a python
-module so it cannot be imported or have its API documented here.
+The main pipeline logic is in :mod:`blip.run_blip`.
 
 General architecture
 --------------------
