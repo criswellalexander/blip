@@ -364,9 +364,12 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         elif self.spectral_model_name == 'bdspec':
             # A spectral model for either the MW bulge or the MW disk.
             self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
-            self.omegaf = self.truncated_powerlaw_3par_b_spectrum
+            self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
             self.fancyname = "MW component"+submodel_count
             if not injection:
+                if 'alpha' not in self.fixedvals.keys():
+                    print("Warning: No low-frequency slope (alpha) specified for bdspec spectral model. Defaulting to alpha=0.5.")
+                    self.fixedvals['alpha'] = 0.5
                 self.spectral_prior = self.bdspec_prior
             else:
                 raise ValueError("bdspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
@@ -1143,27 +1146,6 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         fcut = 10**log_fcut
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(alpha) * (1+jnp.tanh((fcut-fs)/fscale))
-
-    def truncated_powerlaw_3par_b_spectrum(self,fs,log_omega0,log_fcut,log_fscale):
-        '''
-        Function to calculate a tanh-truncated power law spectrum with alpha fixed to 2/3.
-
-        Arguments
-        -----------
-        fs (array of floats) : frequencies at which to evaluate the spectrum
-        log_omega0 (float)   : power law amplitude of the power law in units of log dimensionless GW energy density at f_ref (if left un-truncated)
-        log_fcut (float)     : log of the cut frequency ("knee") in Hz
-        log_fscale           : log of the cutoff scale factor in Hz
-
-        Returns
-        -----------
-        spectrum (array of floats) : the resulting truncated power law spectrum
-
-        '''
-        fcut = 10**log_fcut
-        fscale = 10**log_fscale
-        return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(2/3) * (1+jnp.tanh((fcut-fs)/fscale))
-
 
     def truncated_powerlaw_fixedalpha_spectrum(self,fs,log_omega0,log_fcut,log_fscale):
         '''
