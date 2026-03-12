@@ -361,6 +361,17 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
 
+        elif self.spectral_model_name == 'bdspec':
+            # A spectral model for either the MW bulge or the MW disk.
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.omegaf = self.truncated_powerlaw_3par_b_spectrum
+            self.fancyname = "MW component"+submodel_count
+            if not injection:
+                self.spectral_prior = self.bdspec_prior
+            else:
+                raise ValueError("bdspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
+
+
         elif self.spectral_model_name == 'robson19foreground':
             ## implementation of the Robson+19 analytic foreground model.
             ## this is a variation of the tanh-truncated foreground, but with
@@ -1133,6 +1144,27 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(alpha) * (1+jnp.tanh((fcut-fs)/fscale))
 
+    def truncated_powerlaw_3par_b_spectrum(self,fs,log_omega0,log_fcut,log_fscale):
+        '''
+        Function to calculate a tanh-truncated power law spectrum with alpha fixed to 2/3.
+
+        Arguments
+        -----------
+        fs (array of floats) : frequencies at which to evaluate the spectrum
+        log_omega0 (float)   : power law amplitude of the power law in units of log dimensionless GW energy density at f_ref (if left un-truncated)
+        log_fcut (float)     : log of the cut frequency ("knee") in Hz
+        log_fscale           : log of the cutoff scale factor in Hz
+
+        Returns
+        -----------
+        spectrum (array of floats) : the resulting truncated power law spectrum
+
+        '''
+        fcut = 10**log_fcut
+        fscale = 10**log_fscale
+        return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(2/3) * (1+jnp.tanh((fcut-fs)/fscale))
+
+
     def truncated_powerlaw_fixedalpha_spectrum(self,fs,log_omega0,log_fcut,log_fscale):
         '''
         Function to calculate a tanh-truncated power law spectrum with a set low-f slope.
@@ -1889,6 +1921,24 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
 
         return [alpha, log_omega0, log_fcut, log_fscale]
+
+    def bdspec_prior(self,theta):
+        """Prior for spectrum of bulge or disk of MW (bdspec).
+
+        Parameters
+        ----------
+        theta : array (3,)
+            samples from unit cube
+
+        Returns
+        -------
+        theta
+            rescaled samples in order: log(Omega_ref), log(f_cut), and log(f_scale)
+        """
+        log_omega0 = -3*theta[1] - 7
+        log_fcut = -0.7*theta[2] - 2.4
+        log_fscale = -2*theta[3] - 2
+        return [log_omega0, log_fcut, log_fscale]
 
     def robson19foreground_prior(self,theta):
 
