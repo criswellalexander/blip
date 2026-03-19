@@ -338,7 +338,7 @@ def _log_performance_analysis(mru_vec2, gridinfo, skyinfo, orbits):
 
     ## check runtime, memory use
     _compiled = mru_vec2.lower(
-        times_sparse, freqs_sparse, skyinfo.active_pixels_vecs[0], orbits
+        times_sparse, freqs_sparse, jnp.zeros(3), orbits
     ).compile()
     logger.debug("freq range %f - %f", freqs[0], freqs[-1])
     logger.debug("sparse ntimes = %d, sparse nfreqs = %d", nt_s, nf_s)
