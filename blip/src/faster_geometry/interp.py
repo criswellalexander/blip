@@ -5,6 +5,8 @@ import logging
 import chex
 from jax import numpy as jnp, vmap
 
+from .const import YEAR
+
 __all__ = [
     "get_sparse_tf_grid",
     "get_response_interpolator",
@@ -33,14 +35,14 @@ def get_sparse_tf_grid(times, freqs):
     Parameters
     ----------
     times : array (ntimes,)
-        dense time grid
+        dense time grid, assumed to start in the beginning of the year
     freqs : array (nfreqs,)
         dense frequency grid
 
     Returns
     -------
     array 1D
-        sparse time grid
+        sparse time grid up to t = 1 year.
     array 1D
         sparse frequency grid
     """
@@ -54,7 +56,8 @@ def get_sparse_tf_grid(times, freqs):
         if dt > dt_s:
             times_sparse = times
         else:
-            times_sparse = jnp.arange(times[0], times[-1], dt_s)
+            tmax = jnp.minimum(times[-1], YEAR)
+            times_sparse = jnp.arange(times[0], tmax, dt_s)
 
     if len(freqs) == 1:  # or freqs[-1] > FMAX_SPARSE:
         freqs_sparse = freqs
@@ -76,7 +79,7 @@ def get_sparse_tf_grid(times, freqs):
     return times_sparse, freqs_sparse
 
 
-def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
+def get_response_interpolator(times, freqs, times_sparse, freqs_sparse, periodic=True):
     """
     Generate interpolator function for response matrices.
 
@@ -92,6 +95,9 @@ def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
         sparse time grid
     freqs_sparse : array (nf_s,)
         sparse frequency grid
+    periodic : bool, optional
+        If True, interpolate on times with 1-year period in accordance with
+        :fun:`get_sparse_tf_grid`; by default True
 
     Returns
     -------
@@ -108,7 +114,8 @@ def get_response_interpolator(times, freqs, times_sparse, freqs_sparse):
     chex.assert_rank([times, freqs, times_sparse, freqs_sparse], 1)
     nt, nf, nt_s, nf_s = len(times), len(freqs), len(times_sparse), len(freqs_sparse)
 
-    interp_vect = vmap(lambda r: jnp.interp(times, times_sparse, r))
+    period = YEAR if periodic else None
+    interp_vect = vmap(lambda r: jnp.interp(times, times_sparse, r, period=period))
     interp_vecf = vmap(lambda r: jnp.interp(freqs, freqs_sparse, r))
 
     def interpolator(response_sparse):
