@@ -1917,9 +1917,10 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         theta
             rescaled samples in order: log(Omega_ref), log(f_cut), and log(f_scale)
         """
-        log_omega0 = -3*theta[1] - 7
-        log_fcut = -0.7*theta[2] - 2.4
-        log_fscale = -2*theta[3] - 2
+        assert len(theta) == 3
+        log_omega0 = -3*theta[0] - 7
+        log_fcut = -0.7*theta[1] - 2.4
+        log_fscale = -2*theta[2] - 2
         return [log_omega0, log_fcut, log_fscale]
 
     def robson19foreground_prior(self,theta):
