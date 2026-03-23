@@ -526,7 +526,7 @@ class LISA(LISAdata, Model):
         plt.close()
 
 
-def run_pipeline(parsed_params, resume):
+def run_pipeline(parsed_params, resume, pre_sample_hook=None):
     """Run the Bayesian pipeline.
 
     Parameters
@@ -535,6 +535,9 @@ def run_pipeline(parsed_params, resume):
         Parameters for the run as output by :func:`parse_config`.
     resume : bool
         Whether to resume a checkpointed run.
+    pre_sample_hook : Callable, optional
+        Function to call on the analysis model before sampling. Can be used to perform
+        arbitrary changes to the model. By default None
     """
     params, inj, misc = parsed_params
     nthread = misc["nthread"]
@@ -601,6 +604,12 @@ def run_pipeline(parsed_params, resume):
         print("Generating sampling engine...")
     else:
         print("Resuming a previous analysis. Reloading data and sampler state...")
+
+    # run user code to modify the model before sampling
+    if pre_sample_hook is not None:
+        print("Pre-sample hook was provided. Running hook...")
+        lisa.Model = pre_sample_hook(lisa.Model, parsed_params)
+        print("Done running pre-sample hook.")
 
     if params['sampler'] == 'dynesty':
         from blip.src.dynesty_engine import dynesty_engine
