@@ -25,31 +25,26 @@ jax.config.update("jax_enable_x64", True)
 
 @register_pytree_node_class
 class Model():
-    '''
-    Class to house all model attributes in a modular fashion.
-    '''
+    """
+    Analysis model. This is a container of :class:`submodels
+    <blip.src.submodel.submodel>` with a prior and a likelihood that can be sampled.
+
+    Parameters
+    ----------
+    params, inj : dict
+        Configuration dictionaries from :func:`parse_config <blip.config.parse_config>`.
+    fs : array (nfreqs,)
+        Frequency grid in Hz.
+    f0 : array (nfreqs,)
+        Frequency grid scaled by transfer frequency (f0 = fs/2*FSTAR).
+    tsegmid : array (ntimes,)
+        Time grid in seconds.
+    rmat : complex array (nfreqs, ntimes, 3, 3)
+        Data correlation matrix.
+    """
+
+    # TODO deduce (fs, f0, tsegmid) from (params, inj)
     def __init__(self,params,inj,fs,f0,tsegmid,rmat):
-        
-        '''
-        Model() parses a Model string from the params file. This is of the form of an arbitrary number of "+"-delimited submodel types.
-        Each submodel should be defined as "[spectral]_[spatial]", save for the noise model, which is just "noise".
-        
-        e.g., "noise+powerlaw_isgwb+truncated-powerlaw_sph" defines a model with noise, an isotropic SGWB with a power law spectrum,
-            and a (spherical harmonic model for) an anisotropic SGWB with a truncated power law spectrum.
-        
-        Arguments
-        ------------
-        params, inj (dict)  : params and inj config dictionaries as generated in run_blip.py
-        fs, f0 (array)      : frequency array and its LISA-characteristic-frequency-scaled counterpart (f0=fs/(2*fstar))
-        tsegmid (array)     : array of time segment midpoints
-        rmat (array)        : the data correllation matrix for all LISA arms
-        
-        Returns
-        ------------
-        Model (object) : Unified Model comprised of an arbitrary number of noise/signal submodels, with a corresponding unified prior and likelihood.
-        
-        '''
-        
         self.fs = fs
         self.f0 = f0
         self.tsegmid = tsegmid
@@ -190,29 +185,25 @@ class Model():
 ################################################### 
 
     
-class Injection():#geometry,sph_geometry):
-    '''
-    Class to house all injection attributes in a modular fashion.
-    '''
+class Injection():
+    """
+    Simulation model. This is a container of :class:`submodels
+    <blip.src.submodel.submodel>` used for synthesizing LISA data.
+
+    Parameters
+    ----------
+    params, inj : dict
+        Configuration dictionaries from :func:`parse_config <blip.config.parse_config>`.
+    fs : array (nfreqs,)
+        Frequency grid in Hz.
+    f0 : array (nfreqs,)
+        Frequency grid scaled by transfer frequency (f0 = fs/2*FSTAR).
+    tsegmid : array (ntimes,)
+        Time grid in seconds.
+    """
+
+    # TODO deduce (fs, f0, tsegmid) from (params, inj)
     def __init__(self,params,inj,fs,f0,tsegmid):
-        '''
-        Injection() parses a Injection string from the params file. This is of the form of an arbitrary number of "+"-delimited submodel types.
-        Each submodel should be defined as "[spectral]_[spatial]", save for the noise model, which is just "noise".
-        
-        e.g., "noise+powerlaw_isgwb+truncated-powerlaw_sph" defines an injection with noise, an isotropic SGWB with a power law spectrum,
-            and a (spherical harmonic description of) an anisotropic SGWB with a truncated power law spectrum.
-        
-        Arguments
-        ------------
-        params, inj (dict)  : params and inj config dictionaries as generated in run_blip.py
-        fs, f0 (array)      : frequency array and its LISA-characteristic-frequency-scaled counterpart (f0=fs/(2*fstar))
-        tsegmid (array)     : array of time segment midpoints
-        
-        Returns
-        ------------
-        Injection (object)  : Unified Injection comprised of an arbitrary number of noise/signal injection components, with a variety of helper functions to aid in the BLIP injection procedure.
-        
-        '''
         self.params = params
         self.inj = inj
         

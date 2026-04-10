@@ -126,7 +126,7 @@ def lisa_orbits_keplerian(tsegmid, L=2.5e9, a=1.496e11, lambda1=0, m_init1=0, ke
     ## Orbital angle alpha(t)
     #at = (2*np.pi/31557600)*times + alphaphase
 
-    '''
+    r'''
     Estimate the eccentric anomaly.
     This is heavily-based and draws greatly from the KeplerianOrbits class
     in the LisaOrbits package: https://lisa-simulation.pages.in2p3.fr/orbits/html/latest/keplerian.html

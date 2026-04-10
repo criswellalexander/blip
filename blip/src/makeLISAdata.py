@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import jax
+import chex
 import jax.numpy as jnp
 from jax import config as jaxconfig
 
@@ -223,12 +224,11 @@ class LISAdata():
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
         for ii in tqdm(range(self.injection.nsplice), desc=injmodel.name, unit="splice"):
-            ## move frequency to be the zeroth-axis, then cholesky decomp
-            ## this sometimes breaks on GPU for unclear reasons, hence the try/except
-            try:
-                L_cholesky = norms[:, None, None] *  xp.linalg.cholesky(xp.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0))
-            except:
-                L_cholesky = norms[:, None, None] *  xp.array(np.linalg.cholesky(np.moveaxis(injmodel.inj_response_mat[:, :, :, ii], -1, 0)))
+            # Do Cholesky decomposition assuming certain symmetries
+            L_cholesky = cholesky_symm(injmodel.response_mat[:, :, :, ii])
+            L_cholesky = xp.moveaxis(L_cholesky, -1, 0)
+            # multiply by ASD
+            L_cholesky = norms[:, xp.newaxis, xp.newaxis] * L_cholesky
 
             ## generate standard normal complex data first
             if self.gpu:
@@ -549,6 +549,51 @@ class LISAdata():
             self.params['fs'] = 1.0/delt
 
         return h1, h2, h3, times
+
+
+def cholesky_symm(m):
+    r"""Cholesky decomposition of response matrix.
+
+    Parameters
+    ----------
+    m : complex array (3, 3, ...)
+        Response matrix. Assumed to have the form
+
+        .. math::
+            \begin{pmatrix}A & B & B \\ B^* & A & B \\ B^* & B^* & A\end{pmatrix}
+
+    Returns
+    -------
+    complex array (3, 3, ...)
+        Lower-triangular matrix L such that m = L L^H.
+    """
+    # manual cholesky decomposition assuming response mat of the form
+    #     [ A  B  B ]
+    # M = [ B* A  B ]. We take the elements of M from averaging the diagonal and
+    #     [ B* B* A ]
+    # off-diagonal components of the response_mat.
+    # We do this custom decomposition to avoid NaNs because the SGWB response is rank-2.
+    chex.assert_shape(m, (3, 3, ...))
+    a = jnp.mean(jnp.array([m[0, 0], m[1, 1], m[2, 2]]), axis=0)
+    b = jnp.mean(jnp.array([m[0, 1], m[0, 2], m[1, 2]]), axis=0)
+
+    # a must be positive
+    a = jnp.abs(a)
+
+    mu = jnp.sqrt(a)
+    lam = b.conj() / mu
+    rho = lam
+    sigma2 = jnp.maximum(0.0, a - jnp.abs(lam) ** 2)
+    sigma = jnp.sqrt(sigma2)
+    kappa = (b.conj() - jnp.abs(lam) ** 2) / sigma
+    beta2 = jnp.maximum(0.0, a - jnp.abs(kappa) ** 2 - jnp.abs(lam) ** 2)
+    beta = jnp.sqrt(beta2)
+
+    _z = 0.0 * mu
+    res = jnp.array([[mu, _z, _z], [lam, sigma, _z], [rho, kappa, beta]])
+
+    chex.assert_equal_shape([m, res])
+    return res
 
 
 # Functions prefixed with _ldc were imported from the LDC hdf5 I/O module

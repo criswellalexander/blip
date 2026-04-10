@@ -7,10 +7,10 @@ import healpy as hp
 
 from blip.src.faster_geometry import (
     compute_orbits,
-    arm_orientations,
+    get_arm_orientations,
     get_ortho_basis_ecliptic_3d,
     mich_response_unconvolved,
-    all_unit_vecs_healpix,
+    get_vecs_all_sky,
     calculate_response_functions,
     FSTAR,
 )
@@ -44,7 +44,7 @@ def response(orbits):
 
     times = orbits[0]
     nside = 8
-    response = mru_vec2(times, 1e-3, all_unit_vecs_healpix(nside), orbits)
+    response = mru_vec2(times, 1e-3, get_vecs_all_sky(nside), orbits)
     assert response.shape == (3, 3, times.shape[0], hp.nside2npix(nside))
     return response
 
@@ -58,7 +58,7 @@ def config():
 def test_arm_orientations(orbits):
     times = orbits[0]
     for sc in range(1, 4):
-        u, v = vmap(arm_orientations, (0, None, None))(times, sc, orbits)
+        u, v = vmap(get_arm_orientations, (0, None, None))(times, sc, orbits)
         chex.assert_shape([u, v], (times.shape[0], 3))
         uv = jnp.vecdot(u, v)
         chex.assert_shape(uv, times.shape)
@@ -66,9 +66,9 @@ def test_arm_orientations(orbits):
         assert jnp.allclose(uv, 0.5)
 
     for t in times:
-        u1, v1 = arm_orientations(t, 1, orbits)
-        u2, v2 = arm_orientations(t, 2, orbits)
-        u3, v3 = arm_orientations(t, 3, orbits)
+        u1, v1 = get_arm_orientations(t, 1, orbits)
+        u2, v2 = get_arm_orientations(t, 2, orbits)
+        u3, v3 = get_arm_orientations(t, 3, orbits)
         assert jnp.allclose(v1, -u3)
         assert jnp.allclose(u1, -v2)
         assert jnp.allclose(u2, -v3)
@@ -114,7 +114,7 @@ def test_low_freq_limit():
     t0 = 0.0
     f0 = 1e-5
     orbits = compute_orbits(jnp.array([t0]))
-    allsky = all_unit_vecs_healpix(nside=8)
+    allsky = get_vecs_all_sky(nside=8)
     mru_vec = jit(vmap(mich_response_unconvolved, (None, None, 0, None)))
     response = mru_vec(t0, f0, allsky, orbits)
     chex.assert_shape(response, (allsky.shape[0], 3, 3))

@@ -1,11 +1,28 @@
 Developer guide
 ===============
 
-The main pipeline logic is in the script ``run_blip``. Currently this is not a python
-module so it cannot be imported or have its API documented here.
+Getting started
+---------------
+
+First, clone the repository and install BLIP locally in a virtual environment. Use an
+editable installation with all development dependencies (includes tests and
+documentation)::
+
+   pip install -e .[gpu] --group dev
+
+Run the test suite::
+
+   pytest
+
+Build the documentation in HTML format::
+
+   cd docs
+   make html
 
 General architecture
 --------------------
+
+The main pipeline logic is in :mod:`blip.run_blip`.
 
 Data generation is done by an :class:`injection <blip.src.models.Injection>`, while data
 analysis is done by a :class:`model <blip.src.models.Model>`. Injections and models are

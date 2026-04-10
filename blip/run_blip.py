@@ -196,12 +196,6 @@ class LISA(LISAdata, Model):
         
         Used to be the initialization of the (now defunct) likelihoods.py
         '''
-        self.r12 = np.conj(self.r1)*self.r2
-        self.r13 = np.conj(self.r1)*self.r3
-        self.r21 = np.conj(self.r2)*self.r1
-        self.r23 = np.conj(self.r2)*self.r3
-        self.r31 = np.conj(self.r3)*self.r1
-        self.r32 = np.conj(self.r3)*self.r2
         self.rbar = np.stack((self.r1, self.r2, self.r3), axis=2)
 
         ## create a data correlation matrix
@@ -531,36 +525,41 @@ class LISA(LISAdata, Model):
         print('Data spectra plot made in ' + self.params['out_dir'] + '/data_psd.png')
         plt.close()
 
-def blip(paramsfile='params.ini',resume=False):
-    '''
-    The main workhorse of the bayesian pipeline.
 
-    Input:
-    Params File
+def run_pipeline(parsed_params, resume, pre_sample_hook=None):
+    """Run the Bayesian pipeline.
 
-    Output: Files containing evidence and pdfs of the parameters
-    '''
-
-    params, inj, misc = parse_config(paramsfile, resume)
+    Parameters
+    ----------
+    parsed_params : tuple
+        Parameters for the run as output by :func:`parse_config`.
+    resume : bool
+        Whether to resume a checkpointed run.
+    pre_sample_hook : Callable, optional
+        Function to call on the analysis model before sampling. Can be used to perform
+        arbitrary changes to the model. By default None
+    """
+    params, inj, misc = parsed_params
     nthread = misc["nthread"]
     randst = misc["randst"]
     nlive = misc["nlive"]
     N_GPU = misc["N_GPU"]
 
-
     if not resume:
         # Make directories, copy stuff
         # Make output folder
-        subprocess.call(["mkdir", "-p", params['out_dir']])
-    
+        os.makedirs(params['out_dir'], exist_ok=True)
+
         # Copy the params file to outdir, to keep track of the parameters of each run.
-        subprocess.call(["cp", paramsfile, params['out_dir']])
-        
+        path_paramsfile = os.path.join(params['out_dir'], misc['paramsfile_name'])
+        with open(path_paramsfile, "w") as f:
+            f.write(misc['paramsfile_text'])
+
         # Initialize lisa class
         lisa =  LISA(params, inj)
-        
+
         ## save the Model and Injection as needed
-        
+
         ## the Injection is massive, so discard the responses we no longer need
         ## saving & discarding now, as opposed to at the end of the run also saves space in the checkpoint files.
         if not params['load_data']:
@@ -605,6 +604,12 @@ def blip(paramsfile='params.ini',resume=False):
         print("Generating sampling engine...")
     else:
         print("Resuming a previous analysis. Reloading data and sampler state...")
+
+    # run user code to modify the model before sampling
+    if pre_sample_hook is not None:
+        print("Pre-sample hook was provided. Running hook...")
+        lisa.Model = pre_sample_hook(lisa.Model, parsed_params)
+        print("Done running pre-sample hook.")
 
     if params['sampler'] == 'dynesty':
         from blip.src.dynesty_engine import dynesty_engine
@@ -851,15 +856,31 @@ def blip(paramsfile='params.ini',resume=False):
             mapmaker(post_samples, params, parameters, plotting_Model, coord=params['healpy_proj'], cmap=params['colormap'])
         else:
             mapmaker(post_samples, params, parameters, plotting_Model, cmap=params['colormap'])
-        
-    
+
+
+def blip(paramsfile, *, resume):
+    """Run BLIP on a given parameter file with given command-line options.
+
+    Parameters
+    ----------
+    paramsfile : str
+        Path to INI parameter file.
+    resume : bool
+        CLI option to resume from a checkpointed run.
+    """
+    parsed_params = parse_config(paramsfile, resume)
+    run_pipeline(parsed_params, resume)
+
+
+def main():
+    if len(sys.argv) != 2:
+        if sys.argv[2] == "resume":
+            blip(sys.argv[1], resume=True)
+        else:
+            raise ValueError("Provide (only) the params file as an argument")
+    else:
+        blip(sys.argv[1], resume=False)
+
 
 if __name__ == "__main__":
-
-    if len(sys.argv) != 2:
-        if sys.argv[2] == 'resume':
-            blip(sys.argv[1],resume=True)
-        else:
-            raise ValueError('Provide (only) the params file as an argument')
-    else:
-        blip(sys.argv[1])
+    main()

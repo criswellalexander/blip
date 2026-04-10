@@ -361,6 +361,20 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
 
+        elif self.spectral_model_name == 'bdspec':
+            # A spectral model for either the MW bulge or the MW disk.
+            self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
+            self.omegaf = self.truncated_powerlaw_fixedalpha_spectrum
+            self.fancyname = "MW component"+submodel_count
+            if not injection:
+                if 'alpha' not in self.fixedvals.keys():
+                    print("Warning: No low-frequency slope (alpha) specified for bdspec spectral model. Defaulting to alpha=0.5.")
+                    self.fixedvals['alpha'] = 0.5
+                self.spectral_prior = self.bdspec_prior
+            else:
+                raise ValueError("bdspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
+
+
         elif self.spectral_model_name == 'robson19foreground':
             ## implementation of the Robson+19 analytic foreground model.
             ## this is a variation of the tanh-truncated foreground, but with
@@ -1889,6 +1903,25 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
 
         return [alpha, log_omega0, log_fcut, log_fscale]
+
+    def bdspec_prior(self,theta):
+        """Prior for spectrum of bulge or disk of MW (bdspec).
+
+        Parameters
+        ----------
+        theta : array (3,)
+            samples from unit cube
+
+        Returns
+        -------
+        theta
+            rescaled samples in order: log(Omega_ref), log(f_cut), and log(f_scale)
+        """
+        assert len(theta) == 3
+        log_omega0 = -3*theta[0] - 8
+        log_fcut = -0.7*theta[1] - 2.4
+        log_fscale = -2*theta[2] - 2
+        return [log_omega0, log_fcut, log_fscale]
 
     def robson19foreground_prior(self,theta):
 

@@ -113,7 +113,10 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
             logger.setLevel(logging.ERROR)
             
             ## select relevant posterior columns
-            post_i = post[:,start_idx:(start_idx+sm.Npar)]
+            if hasattr(sm, "posterior_to_params_hook"):
+                post_i = np.asarray(sm.posterior_to_params_hook(post)).T
+            else:
+                post_i = post[:,start_idx:(start_idx+sm.Npar)]
             
 
             if hasattr(sm,"fixed_map") and sm.fixed_map:
@@ -420,13 +423,16 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             model_legend_elements.append(Line2D([0],[0],color=sm.color,lw=3,label=sm.fancyname))
             ## this grabs the relevant bits of the posterior vector for each model
             ## will need to fix this for the anisotropic case later...
-            post_sm = [post[:,idx] for idx in range(start_idx,start_idx+sm.Npar)]
-            ## handle any additional spatial variables (will need to fix this when I introduce hierarchical models)
-            if hasattr(sm,"blm_start"):
-                post_sm = post_sm[:sm.blm_start]
-            elif hasattr(sm,"spatial_start"):
-                post_sm = post_sm[:sm.spatial_start]
-            start_idx += sm.Npar
+            if hasattr(sm, "posterior_to_params_hook"):
+                post_sm = sm.posterior_to_params_hook(post)
+            else:
+                post_sm = [post[:,idx] for idx in range(start_idx,start_idx+sm.Npar)]
+                ## handle any additional spatial variables (will need to fix this when I introduce hierarchical models)
+                if hasattr(sm,"blm_start"):
+                    post_sm = post_sm[:sm.blm_start]
+                elif hasattr(sm,"spatial_start"):
+                    post_sm = post_sm[:sm.spatial_start]
+                start_idx += sm.Npar
             if hasattr(sm,"fixedspec") and sm.fixedspec:
                 Sgw = sm.compute_Sgw(fs,sm.fixed_args)
                 plot_data['fit_data']['astro_fits'][sm_name]['spec'] = Sgw
@@ -535,7 +541,10 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             ## for memory's sake, this needs to be a for loop
             Sgw = np.zeros((post.shape[0],len(fdata)))
             for jj in range(post.shape[0]):
-                post_sm = post[jj,start_idx:start_idx+sm.Npar]
+                if hasattr(sm, "posterior_to_params_hook"):
+                    post_sm = sm.posterior_to_params_hook(post[jj])
+                else:
+                    post_sm = post[jj,start_idx:start_idx+sm.Npar]
                 ## handle noise and gw differently, but they all ended up named Sgw. Oh well.
                 if sm_name == 'noise':
                     Np = 10**post_sm[0]

@@ -5,6 +5,14 @@ API documentation
 Core BLIP logic
 ===============
 
+``run_blip`` module
+-------------------
+
+.. automodule:: blip.run_blip
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ``submodel`` module
 -------------------
 
@@ -36,6 +44,14 @@ Legacy ``geometry`` module
 ------------------------
 
 .. automodule:: blip.src.fast_geometry
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+The experimental ``faster_geometry`` module
+-------------------------------------------
+
+.. automodule:: blip.src.faster_geometry
    :members:
    :undoc-members:
    :show-inheritance:
@@ -118,14 +134,6 @@ Miscellaneous
 ----------------
 
 .. automodule:: blip.src.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-The experimental ``faster_geometry`` module
--------------------------------------------
-
-.. automodule:: blip.src.faster_geometry
    :members:
    :undoc-members:
    :show-inheritance:
