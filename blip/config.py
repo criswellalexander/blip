@@ -136,7 +136,7 @@ SECTION_PARAMS = [
     Option("model_basis",
            desc="""
                Skymap representation. Can be 'pixel' (Criswell+25 pixelated skymaps)
-                   or 'sph' (Banagiri+21 spherical harmonics).
+               or 'sph' (Banagiri+21 spherical harmonics).
                """,
            default="pixel"),
     Option(
@@ -170,7 +170,7 @@ SECTION_INJ = [
     ),
     Option("inj_basis", desc="""
                             Skymap representation for the injection. Can be 'pixel' (Criswell+25 pixelated skymaps)
-                                or 'sph' (Banagiri+21 spherical harmonics).
+                            or 'sph' (Banagiri+21 spherical harmonics).
                             """,
                         default="pixel"),
     Option(
