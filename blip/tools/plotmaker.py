@@ -113,7 +113,10 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
             logger.setLevel(logging.ERROR)
             
             ## select relevant posterior columns
-            post_i = post[:,start_idx:(start_idx+sm.Npar)]
+            if hasattr(sm, "posterior_to_params_hook"):
+                post_i = np.asarray(sm.posterior_to_params_hook(post)).T
+            else:
+                post_i = post[:,start_idx:(start_idx+sm.Npar)]
             
 
             if hasattr(sm,"fixed_map") and sm.fixed_map:
@@ -133,7 +136,7 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
                     Omega_1mHz = sm.omegaf(1e-3,*post_i[ii,:])
                     omega_map = omega_map + Omega_1mHz * norm_map
             
-            elif hasattr(sm,"parameterized_map") and sm.parameterized_map:
+            elif hasattr(sm,"parameterized_map") and sm.parameterized_map and not sm.basis=='sph':
                 ## for analyses with explicitly parameterized sky distributions (i.e. parameterized but not the more generic sph. harm. model)
                 print("Computing marginalized posterior skymap for submodel: {}...".format(submodel_name))
                 skip_median = False
@@ -207,7 +210,7 @@ def mapmaker(post, params, parameters, Model, saveto=None, coord=None, cmap=None
                 # median values of the posteriors
                 med_vals = np.median(post_i, axis=0)
 
-                if hasattr(sm,"parameterized_map") and sm.parameterized_map:
+                if hasattr(sm,"parameterized_map") and sm.parameterized_map and not sm.basis=='sph':
                     ## explicitly parameterized spatial analyses
                     ## get Omega(f=1mHz)
                     Omega_1mHz_median = sm.omegaf(1e-3,*med_vals[:sm.spatial_start])
@@ -420,13 +423,16 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             model_legend_elements.append(Line2D([0],[0],color=sm.color,lw=3,label=sm.fancyname))
             ## this grabs the relevant bits of the posterior vector for each model
             ## will need to fix this for the anisotropic case later...
-            post_sm = [post[:,idx] for idx in range(start_idx,start_idx+sm.Npar)]
-            ## handle any additional spatial variables (will need to fix this when I introduce hierarchical models)
-            if hasattr(sm,"blm_start"):
-                post_sm = post_sm[:sm.blm_start]
-            elif hasattr(sm,"spatial_start"):
-                post_sm = post_sm[:sm.spatial_start]
-            start_idx += sm.Npar
+            if hasattr(sm, "posterior_to_params_hook"):
+                post_sm = sm.posterior_to_params_hook(post)
+            else:
+                post_sm = [post[:,idx] for idx in range(start_idx,start_idx+sm.Npar)]
+                ## handle any additional spatial variables (will need to fix this when I introduce hierarchical models)
+                if hasattr(sm,"blm_start"):
+                    post_sm = post_sm[:sm.blm_start]
+                elif hasattr(sm,"spatial_start"):
+                    post_sm = post_sm[:sm.spatial_start]
+                start_idx += sm.Npar
             if hasattr(sm,"fixedspec") and sm.fixedspec:
                 Sgw = sm.compute_Sgw(fs,sm.fixed_args)
                 plot_data['fit_data']['astro_fits'][sm_name]['spec'] = Sgw
@@ -535,7 +541,10 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             ## for memory's sake, this needs to be a for loop
             Sgw = np.zeros((post.shape[0],len(fdata)))
             for jj in range(post.shape[0]):
-                post_sm = post[jj,start_idx:start_idx+sm.Npar]
+                if hasattr(sm, "posterior_to_params_hook"):
+                    post_sm = sm.posterior_to_params_hook(post[jj])
+                else:
+                    post_sm = post[jj,start_idx:start_idx+sm.Npar]
                 ## handle noise and gw differently, but they all ended up named Sgw. Oh well.
                 if sm_name == 'noise':
                     Np = 10**post_sm[0]
@@ -615,7 +624,7 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
             ylow_min = np.min(ylows)
             ## check to see if the diag_spectra() ylim was higher
             ## and use that ylim if so (helps with wonky lower limits)
-            if (Injection.plot_ymin is not None) and (Injection.plot_ymin > 10**(ylow_min - 1)):
+            if Injection and (Injection.plot_ymin is not None) and (Injection.plot_ymin > 10**(ylow_min - 1)):
                 ylim_final = Injection.plot_ymin
             else:
                 ylim_final = 10**(ylow_min)
@@ -666,7 +675,9 @@ def fitmaker(post,params,parameters,inj,Model,Injection=None,saveto=None,plot_co
     
 
   
-def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=None, saveto=None, histcolor='teal', smooth=0.75):
+def cornermaker(post, params,parameters, inj, Model, Injection=None,
+                split_by=None, saveto=None, histcolor='teal', smooth=0.75,
+                mpl_settings={},maxticks=3):
 
     '''
     Make posterior plots from the samples generated by tge mcmc/nested sampling algorithm.
@@ -705,6 +716,10 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         
     smooth: float or bool
         Smoothing parameter of the 2D contours to pass to corner.corner. Default 0.75. Set to False for no smoothing.
+
+    mpl_settings : dict
+        Dictionary of matplotlib rcParams, in the usual format.
+
     '''
     
     ## set matplotlib plotting style
@@ -715,6 +730,9 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
                    'axes.labelsize': 24,
                    'axes.titlesize':20
                    }
+
+    plot_params = plot_params | mpl_settings
+
     matplotlib.rcParams.update(plot_params)
     
     all_parameters = Model.parameters['all']
@@ -778,7 +796,7 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         highs = np.max(post[:,subset_filt_i],axis=0)
         corner.corner(post[:,subset_filt_i], levels=[0.68,0.95,0.997], bins=N_bins,
                       plot_datapoints=False, plot_density=False, fill_contours=True, smooth=smooth,
-                      fig=fig, show_titles=False, max_n_ticks=3, color=histcolor)#, labelpad=0.1)
+                      fig=fig, show_titles=False, max_n_ticks=maxticks, color=histcolor)#, labelpad=0.1)
         if knowTrue:
             truths=[truevals[par] if par in truevals.keys() else None for par in parameter_subset_i]
             corner.overplot_lines(fig, truths, ls='--', c='k', alpha=0.7)
@@ -840,7 +858,9 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
                 mean_def = mean_prec.format(sum_ax[1])
                 eidx = mean_def.find('e')
                 base = float(mean_def[0:eidx])
-                exponent = int(mean_def[eidx+1:])
+                _thing = float(mean_def[eidx+1:])
+                assert round(_thing) == _thing  # it is an int
+                exponent = int(_thing)
                 mean_form = str(base)
                 exp_form = ' \\times ' + '10^{' + str(exponent) + '}'
             else:
@@ -874,16 +894,21 @@ def cornermaker(post, params,parameters, inj, Model, Injection=None, split_by=No
         ## plot aesthetics
         fig.align_ylabels()
         fig.align_xlabels()
-        
+
         ## Save posterior
         if saveto is not None:
             fig_path_base = (saveto + '/corners_' + subset_name_i).replace('//','/')
         else:
             fig_path_base = (params['out_dir'] + '/corners_' + subset_name_i).replace('//','/')
-        
+
         for ext in ['.png','.pdf']:
-            plt.savefig(fig_path_base+ext, dpi=200, bbox_inches='tight')
+            plt.savefig(fig_path_base+ext, dpi=300, bbox_inches='tight')
             print("Posterior corner plot printed as " + ext + " file to " + fig_path_base+ext)
+
+        ## just save the corner fig for small tweaks
+        with open(params['out_dir'] + '/cornerfig.pickle', 'wb') as figfile:
+            pickle.dump(fig,figfile)
+
         plt.close()
         
 
@@ -906,6 +931,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--plotdatadir', type=str, default=None, help="/path/to/plot_data.pickle; where to save the plot data as a pickle file. Defaults to [out_dir]/plot_data.pickle.")
     
+    parser.add_argument('--cornerfmt', type=str, default=None, help="MPL rcParams dict for formatting the corner plots.")
+    parser.add_argument('--cornermaxticks', type=int, default=3, help="Maximum number of ticks for the corner plots.")
+
     # execute parser
     args = parser.parse_args()
 
@@ -930,7 +958,14 @@ if __name__ == '__main__':
     if not args.nocorner:
         ## reset the matplotlib style setting
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)
-        cornermaker(post, params, parameters, inj, Model, Injection=Injection, split_by=args.cornersplit, smooth=args.cornersmooth)
+        ## grab any formatting
+        if args.cornerfmt is not None:
+            fmt = dict(eval(args.cornerfmt))
+        else:
+            fmt = {}
+        cornermaker(post, params, parameters, inj, Model, Injection=Injection,
+                    split_by=args.cornersplit, smooth=args.cornersmooth,
+                    mpl_settings=fmt,maxticks=args.cornermaxticks)
     if not args.nofit:
         ## reset the matplotlib style setting
         matplotlib.rcParams.update(matplotlib.rcParamsDefault)

@@ -3,14 +3,14 @@ import numpy.linalg as LA
 import jax.numpy as jnp
 #import jax.numpy.linalg as JLA
 import jax
-#from scipy.special import lpmn, sph_harm
 from multiprocessing import Pool
 from jax import config
 config.update("jax_enable_x64", True)
 import healpy as hp
-from scipy.special import sph_harm
+from scipy.special import sph_harm_y
 from blip.src.sph_geometry import sph_geometry
 from tqdm import tqdm
+from blip.src.orbits import lisa_orbits_algebraic, lisa_orbits_keplerian
 import os
 import time
 
@@ -31,7 +31,7 @@ class fast_geometry(sph_geometry):
     
     '''
 
-    def __init__(self,params,nthreads=1):
+    def __init__(self,params,nthreads=1, use_gpu=False):
         
         self.params = params
         self.nthreads = nthreads
@@ -40,20 +40,36 @@ class fast_geometry(sph_geometry):
         else:
             self.parallel = False
         self.armlength = 2.5e9
+        # LSS this is for orbital configuration -- removing lisa_orbits func.
+        if self.params['lisa_config'] == 'keplerian':
+            if self.params['tstart'] != 0:
+                raise NotImplementedError('TSTART!=0 NOT IMPLEMENTED YET FOR KEPLERIAN ORBITS!')
+            print('Using Keplerian orbit configuration')
+            self.orbits = lisa_orbits_keplerian
+        elif self.params['lisa_config'] == 'orbiting':
+            print('Using algebraic orbit configuration')
+            self.orbits = lisa_orbits_algebraic
+        else:
+            raise ValueError('Unknown LISA configuration selected')
         
         ## numpy/jax.numpy switch
         global xp
-        backend = jax.default_backend()
-        if backend == 'gpu':
-            print("GPU detected; performing response function calculations on GPU...")
-            self.gpu = True
-            xp = jnp
-        elif backend == 'cpu':
-            print("No GPU detected; performing response function calculations on CPU...")
-            self.gpu = False
-            xp = np
+        # LSS check if GPU injection flag is True
+        if use_gpu:
+            backend = jax.default_backend()
+            if backend == 'gpu':
+                print("GPU detected; performing response function calculations on GPU...")
+                self.gpu = True
+                xp = jnp
+            elif backend == 'cpu':
+                print("No GPU detected; performing response function calculations on CPU...")
+                self.gpu = False
+                xp = np
+            else:
+                print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
+                self.gpu = False
+                xp = np
         else:
-            print("Warning: something fishy is afoot! JAX backend is neither CPU nor GPU. Defaulting to CPU; if you are trying to run BLIP on a TPU, don't!")
             self.gpu = False
             xp = np
         
@@ -63,70 +79,6 @@ class fast_geometry(sph_geometry):
             print("Using shared memory.")
         else:
             self.shared_memory = False
-
-
-    def lisa_orbits(self, tsegmid):
-
-        '''
-        Define LISA orbital positions at the midpoint of each time integration segment using analytic MLDC orbits.
-
-        Parameters
-        -----------
-
-        tsegmid  :  array
-            A numpy array of the tsegmid for each time integration segment.
-
-        Returns
-        -----------
-        rs1, rs2, rs3  :  array
-            Arrays of satellite positions for each segment midpoint in timearray. e.g. rs1[1] is [x1,y1,z1] at t=midpoint[1]=timearray[1]+(segment length)/2.
-        '''
-        
-        ## Branch orbiting and stationary cases; compute satellite position in stationary case based off of first time entry in data.
-        if self.params['lisa_config'] == 'stationary':
-            # Calculate start time from tsegmid
-            tstart = tsegmid[0] - (tsegmid[1] - tsegmid[0])/2
-            # Fill times array with just the start time
-            times = np.empty(len(tsegmid))
-            times.fill(tstart)
-        elif self.params['lisa_config'] == 'orbiting':
-            times = tsegmid
-        else:
-            raise ValueError('Unknown LISA configuration selected')
-
-
-        ## Semimajor axis in m
-        a = 1.496e11
-
-
-        ## Alpha and beta phases allow for changing of initial satellite orbital phases; default initial conditions are alphaphase=betaphase=0.
-        betaphase = 0
-        alphaphase = 0
-
-        ## Orbital angle alpha(t)
-        at = (2*np.pi/31557600)*times + alphaphase
-
-        ## Eccentricity. L-dependent, so needs to be altered for time-varied arm length case.
-        e = self.armlength/(2*a*np.sqrt(3))
-
-        ## Initialize arrays
-        beta_n = (2/3)*np.pi*np.array([0,1,2])+betaphase
-
-        ## meshgrid arrays
-        Beta_n, Alpha_t = np.meshgrid(beta_n, at)
-
-        ## Calculate inclination and positions for each satellite.
-        x_n = a*np.cos(Alpha_t) + a*e*(np.sin(Alpha_t)*np.cos(Alpha_t)*np.sin(Beta_n) - (1+(np.sin(Alpha_t))**2)*np.cos(Beta_n))
-        y_n = a*np.sin(Alpha_t) + a*e*(np.sin(Alpha_t)*np.cos(Alpha_t)*np.cos(Beta_n) - (1+(np.cos(Alpha_t))**2)*np.sin(Beta_n))
-        z_n = -np.sqrt(3)*a*e*np.cos(Alpha_t - Beta_n)
-
-
-        ## Construct position vectors r_n
-        rs1 = xp.array([x_n[:, 0],y_n[:, 0],z_n[:, 0]])
-        rs2 = xp.array([x_n[:, 1],y_n[:, 1],z_n[:, 1]])
-        rs3 = xp.array([x_n[:, 2],y_n[:, 2],z_n[:, 2]])
-
-        return rs1, rs2, rs3
 
     ###################################################################################
     ## Wrapper functions to return the corresponding response array from its entries ##
@@ -535,7 +487,7 @@ class fast_geometry(sph_geometry):
         omegahat = np.array([np.sqrt(1-ctheta**2)*np.cos(phi),np.sqrt(1-ctheta**2)*np.sin(phi),ctheta])
 
         # Call lisa_orbits to compute satellite positions at the midpoint of each time segment
-        rs1, rs2, rs3 = self.lisa_orbits(tsegmid)
+        rs1, rs2, rs3 = self.orbits(tsegmid)
         
         ## get the unit vectors for each arm, as we need them frequently
         uhat_21 = (rs2-rs1)/LA.norm(rs2-rs1,axis=0)[None, :]
@@ -597,7 +549,7 @@ class fast_geometry(sph_geometry):
                 ## Get the spherical harmonics
                 for ii in range(alm_size):
                     lval, mval = self.idxtoalm(sm.almax, ii)
-                    self.Ylms[:, ii] = sph_harm(mval, lval, phi, theta)
+                    self.Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi) ## theta, phi switched due to new scipy convention
                 sm.response_shape = (3,3,f0.size, tsegmid.size,alm_size)
                 sm.response_wrapper_func = "sph_asgwb_wrapper"
                 wrappers.append("sph_asgwb_wrapper")
@@ -686,7 +638,7 @@ class fast_geometry(sph_geometry):
                     self.unpack_wrapper(ii,R_f)
         ## the non-parallel version has a nice progress bar :)
         else:
-            for ii in tqdm(idx):
+            for ii in tqdm(idx, desc="response", unit="frequency"):
                 R_f = self.frequency_response_wrapper(ii)
                 self.unpack_wrapper(ii,R_f)        
 

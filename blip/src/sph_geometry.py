@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.special import sph_harm
+from scipy.special import sph_harm_y
 import numpy.linalg as LA
 import healpy as hp
 from multiprocessing import Pool
@@ -7,6 +7,7 @@ from blip.src.clebschGordan import clebschGordan
 
 class sph_geometry(clebschGordan):
 
+    # FIXME uninitialized self.params, self.f0, self.inj, self.lisa_orbits
     def __init__(self):
         clebschGordan.__init__(self)
 
@@ -127,7 +128,7 @@ class sph_geometry(clebschGordan):
         ## Get the spherical harmonics
         for ii in range(alm_size):
             lval, mval = self.idxtoalm(almax, ii)
-            Ylms[:, ii] = sph_harm(mval, lval, phi, theta)
+            Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi) ## theta, phi switched due to new scipy convention
 
 
         # Calculate the detector response for each frequency
@@ -462,7 +463,7 @@ class sph_geometry(clebschGordan):
         ## Get the spherical harmonics
         for ii in range(alm_size):
             lval, mval = self.idxtoalm(almax, ii)
-            self.Ylms[:, ii] = sph_harm(mval, lval, phi, theta)
+            self.Ylms[:, ii] = sph_harm_y(mval, lval, theta, phi) ## theta, phi switched due to new scipy convention
 
         
         # Initialize response matrix

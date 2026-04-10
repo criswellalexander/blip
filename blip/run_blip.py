@@ -2,22 +2,32 @@
 
 import pickle
 import numpy as np
-import sys, os, shutil, configparser, subprocess
+import sys, os, shutil, subprocess
+
+# FIXME is this actually needed?
 sys.path.append(os.getcwd()) ## this lets python find src
+
+# FIXME why is there a src submodule?
 from blip.src.makeLISAdata import LISAdata
 from blip.src.models import Model, Injection
+from blip.src.submodel import SubmodelKind
 from blip.src.fast_geometry import fast_geometry, get_model_responses
+from blip.src.faster_geometry import calculate_response_functions
 from blip.src.utils import ensure_color_matching
 from blip.tools.plotmaker import cornermaker
 from blip.tools.plotmaker import mapmaker
 from blip.tools.plotmaker import fitmaker
+from blip.config import parse_config
+
 import matplotlib.pyplot as plt
 import matplotlib
 from multiprocessing import Pool
 import time
+
 #import jax
 from jax import config
 config.update("jax_enable_x64", True)
+
 
 ## set default fonts
 plot_params = {'font.family':'STIXGeneral',
@@ -55,11 +65,15 @@ class LISA(LISAdata, Model):
             self.Model = Model(params,inj,self.fdata,self.f0,self.tsegmid,self.rmat)
             
             ## compute response functions
-            get_model_responses(self.Model)
+            if params["faster_geometry"]:
+                submodels_sgwb = [sm for sm in self.Model.submodels.values() if sm.kind != SubmodelKind.NOISE]
+                calculate_response_functions(self.fdata, self.tsegmid, submodels_sgwb, params)
+            else:
+                get_model_responses(self.Model)
             
             # make sure matching injections/models have matching colors
             if not self.params['load_data']:
-                ensure_color_matching(self.Model,self.Injection)
+                ensure_color_matching(self.Model,self.injection)
         
         ## if doing an injection, we also need the responses evaluated at the data frequencies for plotting/validation
         if not self.params['load_data'] and not self.inj['loadInj']:
@@ -82,7 +96,7 @@ class LISA(LISAdata, Model):
         print("Loading extant BLIP-generated data from {}".format(self.inj['injdir']))
         
         with open(self.inj['injdir'] + '/injection.pickle', 'rb') as injectionfile:
-            self.Injection = pickle.load(injectionfile)
+            self.injection = pickle.load(injectionfile)
         
         loaded_data = np.load(self.inj['injdir']+'/simulated_data.npz')
         
@@ -103,14 +117,11 @@ class LISA(LISAdata, Model):
         to generate data. Return Frequency domain data.
         '''
 
-        ## define the splice segment duration
-        tsplice = 1e4
-        ## the segments to be splices are half-overlapping
-        nsplice = 2*int(self.params['dur']/tsplice) + 1
-        ## arrays of segmnent start and mid times
-        tsegmid = self.params['tstart'] +  (tsplice/2.0) * np.arange(nsplice) + (tsplice/2.0)
-        ## Number of time-domain points in a splice segment
-        Npersplice = int(self.params['fs']*tsplice)
+        # Simulation time-frequency grid precomputed during configuration parsing
+        nsplice = self.params["nsplice"]
+        tsegmid = self.params["tsegmid"]
+        Npersplice = self.params["Npersplice"]
+
         ## leave out f = 0
         frange = np.fft.rfftfreq(Npersplice, 1.0/self.params['fs'])[1:]
         ## the charecteristic frequency of LISA, and the scaled frequency array
@@ -119,18 +130,20 @@ class LISA(LISAdata, Model):
         
         ## Build the Injection object
         print("Constructing injection...")
-        self.Injection = Injection(self.params,self.inj,frange,f0,tsegmid)
+        self.injection = Injection(self.params,self.inj,frange,f0,tsegmid)
         
         ## assign a couple additional universal injection attributes needed in add_sgwb_data()
-        self.Injection.Npersplice = Npersplice
-        self.Injection.nsplice = nsplice
+        self.injection.Npersplice = Npersplice
+        self.injection.nsplice = nsplice
         
         # Generate TDI noise
-        times, self.h1, self.h2, self.h3 = self.Injection.components['noise'].gen_noise_spectrum()
+        times, self.h1, self.h2, self.h3 = self.injection.components['noise'].gen_noise_spectrum()
         delt = times[1] - times[0]
 
         # Cut to required size
         N = int((self.params['dur'])/delt)
+        self.timearray = np.arange(0, self.params['dur'], delt)
+        self.timearray = self.timearray[0:N]
         self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
 
         ## create time-domain contribution from each injection component that isn't noise
@@ -142,21 +155,28 @@ class LISA(LISAdata, Model):
         else:
             rng_seed = np.random.randint(int(1e9),dtype='int32')
         rng = np.random.default_rng(rng_seed)
-        keys = rng.integers(int(1e9),size=len(self.Injection.sgwb_component_names),dtype='int32')
+        keys = rng.integers(int(1e9),size=len(self.injection.sgwb_component_names),dtype='int32')
         
-        for component, key in zip(self.Injection.sgwb_component_names,keys):
-            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.Injection.components[component],key)
+        for component, key in zip(self.injection.sgwb_component_names,keys):
+            h1_gw, h2_gw, h3_gw, times = self.add_sgwb_data(self.injection.components[component],key)
+
+            assert h1_gw.size == times.size
+            assert h1_gw.size == self.h1.size
+            assert np.isclose(delt, times[1]-times[0]), 'The noise and signal arrays are at different sampling frequencies!'
+
+            # cut again to required length, because the signal (constructed from splices)
+            # might be longer or shorter than the noise.
+            N = min(N, len(times))
+            self.timearray = self.timearray[0:N]
+            times = times[0:N]
+            self.h1, self.h2, self.h3 = self.h1[0:N], self.h2[0:N], self.h3[0:N]
             h1_gw, h2_gw, h3_gw = h1_gw[0:N], h2_gw[0:N], h3_gw[0:N]
 
             # Add gravitational-wave time series to noise time-series
             self.h1 = self.h1 + h1_gw
             self.h2 = self.h2 + h2_gw
             self.h3 = self.h3 + h3_gw
-        
 
-        self.timearray = times[0:N]
-        if delt != (times[1] - times[0]):
-            raise ValueError('The noise and signal arrays are at different sampling frequencies!')
 
         # Desample if we increased the sample rate for time-shifts.
         if self.params['fs'] != 1.0/delt:
@@ -176,12 +196,6 @@ class LISA(LISAdata, Model):
         
         Used to be the initialization of the (now defunct) likelihoods.py
         '''
-        self.r12 = np.conj(self.r1)*self.r2
-        self.r13 = np.conj(self.r1)*self.r3
-        self.r21 = np.conj(self.r2)*self.r1
-        self.r23 = np.conj(self.r2)*self.r3
-        self.r31 = np.conj(self.r3)*self.r1
-        self.r32 = np.conj(self.r3)*self.r2
         self.rbar = np.stack((self.r1, self.r2, self.r3), axis=2)
 
         ## create a data correlation matrix
@@ -202,10 +216,14 @@ class LISA(LISAdata, Model):
         fstar = 3e8/(2*np.pi*self.armlength)
         # define f0 = f/2f*
         f0_data = self.fdata/(2*fstar)
-        fast_rx = fast_geometry(self.params)
-        fast_rx.calculate_response_functions(f0_data,self.tsegmid,[self.Injection.components[cmn] for cmn in self.Injection.sgwb_component_names],self.params['tdi_lev'],plot_flag=True)
-        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
-        del fast_rx
+        submodels_sgwb = [self.injection.components[cmn] for cmn in self.injection.sgwb_component_names]
+        if self.params["faster_geometry"]:
+            calculate_response_functions(self.fdata, self.tsegmid, submodels_sgwb, self.params, plot_flag=True)
+        else:
+            fast_rx = fast_geometry(self.params)
+            fast_rx.calculate_response_functions(f0_data,self.tsegmid,submodels_sgwb,self.params['tdi_lev'],plot_flag=True)
+            ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
+            del fast_rx        ## deallocate to save on memory now that the response functions have been calculated and stored elsewhere
         return
     
     def compute_inj_fdata_spectra(self):
@@ -214,9 +232,9 @@ class LISA(LISAdata, Model):
         
         This is needed to allow us to accurately plot and compare injected spectra vs. simulated data vs. recovered models.
         '''
-        for cmn in self.Injection.component_names:
+        for cmn in self.injection.component_names:
             
-            cm = self.Injection.components[cmn]
+            cm = self.injection.components[cmn]
             
             #Charactersitic frequency
             fstar = 3e8/(2*np.pi*self.armlength)
@@ -263,15 +281,15 @@ class LISA(LISAdata, Model):
         data_PSD1,data_PSD2, data_PSD3 = data_PSD1[idx], data_PSD2[idx], data_PSD3[idx]
         
         ## Get the noise component
-        cmn_noise = self.Injection.components['noise']
+        cmn_noise = self.injection.components['noise']
         C_noise = cmn_noise.fdata_noise
 
         # Extract noise auto-power
         S1, S2, S3 = C_noise[0, 0, :], C_noise[1, 1, :], C_noise[2, 2, :]
 
         ## compute and save the time-averaged response-convolved spectrum for plotting, etc.
-        for cmn in self.Injection.sgwb_component_names:
-            cm = self.Injection.components[cmn]
+        for cmn in self.injection.sgwb_component_names:
+            cm = self.injection.components[cmn]
             if hasattr(cm,"ispop") and cm.ispop:
                 Sgw_convolved = cm.fdata_convolved_spectra ## the population spectra needs to be binned at the observed (data) frequencies in any case
             else:
@@ -306,7 +324,7 @@ class LISA(LISAdata, Model):
             channel_labels = ['X','Y','Z']
         elif self.params['tdi_lev'] == 'aet':
             channel_labels = ['A','E','T']
-        plot_data['injspec_data']['channels'] = channel_labels
+        plot_data['injspec_data']['channels'] = channel_labels  # FIXME used before assignment
         
         channel_colors = ['black','darkgrey','steelblue']
         ## flag if we need to look at CSDs also
@@ -349,8 +367,8 @@ class LISA(LISAdata, Model):
         ywmeds = []
         ydevs = []
         ylim_flag = False
-        for component_name in self.Injection.sgwb_component_names:
-            S1_gw = self.Injection.plot_injected_spectra(component_name,fs_new='data',convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.Injection.components[component_name].color)
+        for component_name in self.injection.sgwb_component_names:
+            S1_gw = self.injection.plot_injected_spectra(component_name,fs_new='data',convolved=True,legend=True,channels='11',return_PSD=True,lw=0.75,color=self.injection.components[component_name].color)
             S1_gw_filt = S1_gw[ffilt]
             plot_data['injspec_data'][component_name] = {'S1_gw':S1_gw_filt}
             plot_data['injspec_data'][component_name]['f_filt'] = self.fdata[ffilt]
@@ -363,7 +381,7 @@ class LISA(LISAdata, Model):
             ywmeds.append(weighted_ymed)
             ydevs.append(np.std(log_S1_gw))
             ylim_flag = True
-            S2_gw, S3_gw = self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels='22'), self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels='33')
+            S2_gw, S3_gw = self.injection.compute_convolved_spectra(component_name,fs_new='data',channels='22'), self.injection.compute_convolved_spectra(component_name,fs_new='data',channels='33')
             S1, S2, S3 = S1+S1_gw, S2+S2_gw, S3+S3_gw
         
         plt.loglog(self.fdata[ffilt], S1[ffilt], label='Simulated Total spectrum', lw=0.75,color='cadetblue')
@@ -374,7 +392,7 @@ class LISA(LISAdata, Model):
             ylow_min = np.min(ylows)
             plt.ylim(bottom=10**(ylow_min-1))
             ## save for plotting the results with plotmaker
-            self.Injection.plot_ymin = 10**(ylow_min-1)
+            self.injection.plot_ymin = 10**(ylow_min-1)
 
         plt.legend(loc='upper right')
         plt.xlabel('$f$ in Hz')
@@ -428,9 +446,9 @@ class LISA(LISAdata, Model):
         
         ymins = []
         iymins = []
-        for component_name in self.Injection.sgwb_component_names:
+        for component_name in self.injection.sgwb_component_names:
             if component_name != 'noise':
-                Sx_gw = self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ) + self.Injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ,imaginary=True)
+                Sx_gw = self.injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ) + self.injection.compute_convolved_spectra(component_name,fs_new='data',channels=IJ,imaginary=True)
                 ymins.append(np.real(Sx_gw).min())
                 iymins.append(np.imag(Sx_gw).min())
                 Sx = Sx + Sx_gw
@@ -508,345 +526,57 @@ class LISA(LISAdata, Model):
         plt.close()
 
 
-def blip(paramsfile='params.ini',resume=False):
-    '''
-    The main workhorse of the bayesian pipeline.
+def run_pipeline(parsed_params, resume, pre_sample_hook=None):
+    """Run the Bayesian pipeline.
 
-    Input:
-    Params File
-
-    Output: Files containing evidence and pdfs of the parameters
-    '''
-
-
-    #  --------------- Read the params file --------------------------------
-
-    # Initialize Dictionaries
-    params = {}
-    inj = {}
-
-    config = configparser.ConfigParser()
-    config.read(paramsfile)
-
-    # Params Dict
-    params['fmin']     = float(config.get("params", "fmin"))
-    params['fmax']     = float(config.get("params", "fmax"))
-    params['dur']      = float(config.get("params", "duration"))
-    params['seglen']   = float(config.get("params", "seglen", fallback=1e5))
-    params['fs']       = float(config.get("params", "fs", fallback=0.25))
-    params['Shfile']   = config.get("params", "Shfile", fallback='LISA_2017_PSD_M.npy')
-    params['load_data'] = int(config.get("params", "load_data", fallback=0))
-    params['datatype'] = str(config.get("params", "datatype", fallback='strain'))
-    params['datafile']  = str(config.get("params", "datafile", fallback=None))
-    ## default fref is 1mHz
-    ## until we update the prior structure, using other reference frequencies may lead to unintended behavior in the prior bounds
-    ## in the new prior structure, the default astrophysical prior bounds should scale with fref
-    params['fref'] = float(config.get("params", "fref", fallback=0.001))
-    if params['fref'] != 0.001:
-        print("Warning: reference frequency set to a value other than 1 mHz (fref={} Hz).".format(params['fref']))
-        print("This may lead to unexpected prior behavior, as the prior bounds are based on a reference frequency of 1 mHz!")
-    
-    
-    params['model'] = str(config.get("params", "model"))
-    
-    ## get the model fixed values, passed as a dict
-    fixedvals = eval(str(config.get("params","fixedvals",fallback='None')))
-    
-    params['fixedvals'] = {}
-    if fixedvals is not None:
-        ## enforce that the keys of the fixedvals dict correspond to the desired models
-        ## at this point we will only make sure that all the keys are in the model string
-        submodel_names = params['model'].split('+')
-        if not np.all([key in submodel_names for key in fixedvals.keys()]):
-            raise ValueError("Fixedvals dictionary has an invalid key. Fixedvals must be provided as a nested dictionary with top-level keys corresponding to the models specified in the 'model' parameter.")
-        ## build the fixedvals dict
-        ## some quantities we want to use as log values, so convert them
-        log_list = ["Np","Na","omega0","fbreak","fcut","fscale"]
-        for submodel_name in fixedvals.keys():
-            params['fixedvals'][submodel_name] = {}
-            for name in fixedvals[submodel_name].keys():
-                if name in log_list:
-                    new_name = "log_"+name
-                    params['fixedvals'][submodel_name][new_name] = np.log10(fixedvals[submodel_name][name])
-                else:
-                    params['fixedvals'][submodel_name][name] = fixedvals[submodel_name][name]
-    
-    
-    
-    params['alias'] = eval(str(config.get("params","alias",fallback="{}")))
-
-    params['tdi_lev'] = str(config.get("params", "tdi_lev", fallback='xyz'))
-    params['lisa_config'] = str(config.get("params", "lisa_config", fallback='orbiting'))
-    params['nside'] = int(config.get("params", "nside"))
-    params['model_basis'] = str(config.get("params", "model_basis", fallback='pixel'))
-    params['tstart'] = float(config.get("params", "tstart", fallback=0))
-
-    ## see if we need to initialize the spherical harmonic subroutines
-    sph_check = [sublist.split('-')[0].split('_')[-1] for sublist in params['model'].split('+')]
-
-    # Injection Dict
-    inj['doInj']         = int(config.get("inj", "doInj"))
-    inj['loadInj']       = int(config.get("inj", "loadInj", fallback=0))
-    inj['inj_only']      = int(config.get("inj", "inj_only", fallback=0))
-    
-    if inj['doInj']:
-        ## first see if we are loading the injection
-        if inj['loadInj']:
-            if inj['inj_only']:
-                raise ValueError("Both loadInj and inj_only flags are set to True. This won't accomplish anything...")
-            inj['injdir'] = str(config.get("inj", "injdir"))
-            ## get the already-generated injection dict
-            with open(inj['injdir'] + '/config.pickle', 'rb') as paramfile:
-                ## things are loaded from the pickle file in the same order they are put in
-                loaded_params = pickle.load(paramfile)
-                loaded_inj = pickle.load(paramfile)
-            ## for this to work, all params that impact the data/response times/frequencies/types can't change
-            ## but you can change e.g., recovery model, sampler, etc.
-            required_immutable = ['fmin','fmax','dur','seglen','fs','nside','tstart','lisa_config','tdi_lev','datatype']
-            requirements_violated = [requirement for requirement in required_immutable if params[requirement] != loaded_params[requirement] ]
-            if len(requirements_violated)>0:
-                raise ValueError("Loaded injection is incompatible with specified configuration due to mismatches in the following config settings: {}".format(requirements_violated))
-            ## update the injection dictionary with the loaded one
-            inj |= loaded_inj
-            ## reset the top-level injection flags to their original state
-            inj['loadInj'] = True
-            inj['inj_only'] = False
-        
-        ## otherwise make a new one
-        else:
-            inj['injection'] = str(config.get("inj", "injection"))
-            
-            ## get the injection basis
-            inj['inj_basis'] = str(config.get("inj", "inj_basis", fallback='pixel'))
-            
-            ## get the injection truevals, passed as a dict
-            truevals = eval(str(config.get("inj","truevals")))
-            ## enforce that the keys of the truevals dict correspond to the injected models
-            ## at this point we will only make sure that all the keys are in the injection string
-            ## (not all injections will have truevals; e.g., population injections)
-            inj_component_names = inj['injection'].split('+')
-            if not np.all([key in inj_component_names for key in truevals.keys()]):
-                raise ValueError("Truevals dictionary has an invalid key. Truevals must be provided as a nested dictionary with top-level keys corresponding to the injections specified in the 'injection' parameter.")
-            
-            ## injection per-component multithreading
-            inj['parallel_inj'] = int(config.get("inj", "parallel_inj", fallback=0))
-            
-            ## if parallel_inj is True but there is only one component, set parallel_inj to False
-#            if len(inj_component_names) == 1 and inj['parallel_inj']:
-#                inj['parallel_inj'] = 0
-            
-            if inj['parallel_inj']:
-                inj['inj_nthread'] = int(config.get("inj", "inj_nthread", fallback=len(inj_component_names)))
-                inj['response_nthread'] = int(config.get("inj", "response_nthread", fallback=1))
-                ## give preference to response multi-threading
-                if inj['inj_nthread'] > 1 and inj['response_nthread'] > 1:
-                    print("Warning: you have set both inj_nthread and response_nthread > 1.")
-                    print("The Multiprocessing package does not allow workers to spawn additional workers.")
-                    print("Giving precedence to response multiprocessing, setting inj_nthread=1.")
-                    inj['inj_nthread'] = 1
-                elif inj['inj_nthread'] == 1 and inj['response_nthread'] == 1:
-                    inj['parallel_inj'] = 0
-                    
-            else:
-                inj['inj_nthread'] = 1
-            
-            ## build the truevals dict
-            ## some quantities we want to use as log values, so convert them
-            inj['truevals'] = {}
-            log_list = ["Np","Na","omega0","fbreak","fcut","fscale"]
-            for component_name in truevals.keys():
-                inj['truevals'][component_name] = {}
-                for name in truevals[component_name].keys():
-                    if name in log_list:
-                        new_name = "log_"+name
-                        inj['truevals'][component_name][new_name] = np.log10(truevals[component_name][name])
-                    else:
-                        inj['truevals'][component_name][name] = truevals[component_name][name]
-        
-        ## add injections to the spherical harmonic check if needed
-        sph_check = sph_check + [sublist.split('-')[0].split('_')[-1] for sublist in inj['injection'].split('+')]
-        
-    
-        
-    ## pop out to set sph flags
-    params['sph_flag'] = ('sph' in sph_check) #or ('hierarchical' in sph_check)
-    ## set sph flag to false if both inj and model basis are pixel
-    if params['model_basis']=='sph' or inj['inj_basis']=='sph':
-        params['sph_flag'] = True
-        params['lmax'] = int(config.get("params", "lmax"))
-    
-    ## some final flag, injection parameter setting if we aren't loading the Injection directly
-    if inj['doInj'] and not inj['loadInj']:
-        
-        ## similarly, set inj sph flag to False if we're doing pixel basis injections
-        if inj['inj_basis']=='pixel' and not ('sph' in sph_check):
-            inj['sph_flag'] = False
-        ## but if we're also explicitly doing a sph injection, set it to true
-        elif inj['inj_basis']=='pixel' and ('sph' in sph_check):
-            inj['sph_flag'] = True
-        else:
-            inj['sph_flag'] = np.any([(item not in ['noise','isgwb']) for item in sph_check])
-        ## set pop flag if spatial and/or spectral injection is a population
-        inj['pop_flag'] = ('population' in sph_check) or ('population' in [sublist.split('-')[0].split('_')[0] for sublist in inj['injection'].split('+')])
-        
-        
-        if inj['sph_flag']:
-            try:
-                inj['inj_lmax'] = int(config.get("inj", "inj_lmax"))
-            except configparser.NoOptionError as err:
-                if params['sph_flag']:
-                    print("Performing a spherical harmonic basis injection and inj_lmax has not been specified. Injection and recovery will use same lmax (lmax={}).".format(params['lmax']))
-                    inj['inj_lmax'] = params['lmax']
-                else:
-                    print("You are trying to do a spherical harmonic injection, but have not specified lmax.")
-                    if 'lmax' in params.keys():
-                        print("Warning: using analysis lmax parameter for inj_lmax, but you are not performing a spherical harmonic analysis.")
-                        inj['inj_lmax'] = params['lmax']
-                    else:
-                        raise err
-        
-        
-        ## NB -- will have to change this structure to allow pop-based recovery models. But it's a good start.
-        if inj['doInj'] and inj['pop_flag']:
-            inj['popdict'] = eval(str(config.get("inj","population_params",fallback='None')))
-            ## make sure every injection population component has a corresponding entry
-            inj_pop_component_names = [cmn for cmn in inj_component_names if 'population' in cmn]
-            for cmn in inj_pop_component_names:
-                if cmn not in inj['popdict'].keys():
-                    raise KeyError("Population injection '{}' does not have a corresponding entry in the population_params dict.".format(cmn))
-            ## step through the (possibly multiple) populations and tweak formatting for the delimiters
-            ## also enforce the required keys and substitute defaults if optional setting isn't given
-            required_keys = ['popfile','columns','delimiter']
-            pop_defaults = {'snr_cut':7,'name':None,'coldict':None}
-            for key in inj['popdict'].keys():
-                ## make sure it corresponds to an injection
-                if key not in inj_component_names:
-                    raise KeyError("Population '{}' not in injection. Top-level keys for the population_params dict must correspond to an injection.".format(key))
-                ## enforce required keys
-                for rk in required_keys:
-                    if rk not in inj['popdict'][key].keys():
-                        raise KeyError("population_params dict missing required key: '{}'".format(rk))
-                ## set defaults
-                for dk in pop_defaults.keys():
-                    if dk not in inj['popdict'][key].keys():
-                        print("No value found for populations parameter '{}' in population_params dict for injection component '{}'. Setting to default ({}).".format(dk,key,pop_defaults[dk]))
-                        inj['popdict'][key][dk] = pop_defaults[dk]   
-                ## formatting
-                if inj['popdict'][key]['delimiter'] == 'space':
-                    inj['popdict'][key]['delimiter'] = ' '
-                elif inj['popdict'][key]['delimiter'] == 'tab':
-                    inj['popdict'][key]['delimiter'] == '\t'
-
-
-
-    # some run parameters
-    params['out_dir']            = str(config.get("run_params", "out_dir"))
-
-    params['doPreProc']          = int(config.get("run_params", "doPreProc", fallback=0))
-    params['input_spectrum']     = str(config.get("run_params", "input_spectrum", fallback='data_spectrum.npz'))
-    params['projection']         = str(config.get("run_params", "projection", fallback='E'))
-    params['FixSeed']            = int(config.get("run_params", "FixSeed", fallback=0))
-    if params['FixSeed']:
-        params['seed']               = int(config.get("run_params", "seed"))
-    nthread                      = int(config.get("run_params", "Nthreads", fallback=1))
-    N_GPU                        = int(config.get("run_params", "N_GPU", fallback=0))
-    
-    
-    params['colormap']       = str(config.get("run_params", "colormap", fallback='magma'))    
-    
-    ## sampler selection
-    params['sampler'] = str(config.get("run_params", "sampler"))
-    
-    ## only numpyro has GPU support
-    if N_GPU > 0 and params['sampler'] not in ['numpyro','numpyro_nested']:
-        raise ValueError("Only numpyro supports GPU acceleration but N_GPU ({}) > 0 and sampler is {}.".format(N_GPU,params['sampler']))
-    
-    ## sampler setup and late-time imports to reduce dependencies
-    ## dynesty
-    if params['sampler'] == 'dynesty':
-        from blip.src.dynesty_engine import dynesty_engine
-        nlive                   = int(config.get("run_params", "nlive", fallback=800))
-        params['sample_method'] = str(config.get("run_params", "sample_method", fallback='rwalk'))
-    ## emcee
-    elif params['sampler'] == 'emcee':
-        from blip.src.emcee_engine import emcee_engine
-        params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
-        params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
-    ## numpyro
-    elif params['sampler'] == 'numpyro':
-        if nthread > 1:
-            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
-        from blip.src.numpyro_engine import numpyro_engine
-        params['show_progress'] = int(config.get("run_params", "show_progress", fallback=1))
-        params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
-        params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
-    ## numpyro nested sampling
-    elif params['sampler'] == 'numpyro_nested':
-        if nthread > 1:
-            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
-        from blip.src.numpyro_engine import numpyro_nested_engine
-#        params['show_progress'] = int(config.get("run_params", "show_progress", fallback=1))
-#        params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
-        params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
-        
-    else:
-        raise ValueError("Unknown sampler. Supported samplers: 'dynesty', 'emcee', and 'numpyro'.")
-    # checkpointing (dynesty+numpyro only for now)
-    if params['sampler']=='dynesty' or params['sampler'] == 'numpyro':
-        params['checkpoint']            = int(config.get("run_params", "checkpoint", fallback=0))
-        ## numpyro's checkpoint_interval is in number of samples, vs. seconds for dynesty
-        if params['sampler'] == 'numpyro':
-            params['checkpoint_at'] = str(config.get("run_params", "checkpoint_at", fallback='end'))
-            if params['checkpoint_at'] == 'interval':
-                params['checkpoint_interval']   = int(config.get("run_params", "checkpoint_interval", fallback=100))
-            params['additional_samples'] = int(config.get("run_params", "additional_samples", fallback=0))
-            if params['additional_samples'] == 0:
-                params['additional_samples'] = None
-        else:
-            params['checkpoint_interval']   = int(config.get("run_params", "checkpoint_interval", fallback=3600))
-
-    # Fix random seed
-    if params['FixSeed']:
-        from blip.tools.SetRandomState import SetRandomState as setrs
-        seed = params['seed']
-        randst = setrs(seed)
-    else:
-        if params['checkpoint']:
-            raise TypeError("Checkpointing without a fixed seed is not supported. Set 'FixSeed' to true and specify 'seed'.")
-        if resume:
-            raise TypeError("Resuming from a checkpoint requires re-generation of data, so the random seed MUST be fixed.")
-        randst = None
+    Parameters
+    ----------
+    parsed_params : tuple
+        Parameters for the run as output by :func:`parse_config`.
+    resume : bool
+        Whether to resume a checkpointed run.
+    pre_sample_hook : Callable, optional
+        Function to call on the analysis model before sampling. Can be used to perform
+        arbitrary changes to the model. By default None
+    """
+    params, inj, misc = parsed_params
+    nthread = misc["nthread"]
+    randst = misc["randst"]
+    nlive = misc["nlive"]
+    N_GPU = misc["N_GPU"]
 
     if not resume:
         # Make directories, copy stuff
         # Make output folder
-        subprocess.call(["mkdir", "-p", params['out_dir']])
-    
+        os.makedirs(params['out_dir'], exist_ok=True)
+
         # Copy the params file to outdir, to keep track of the parameters of each run.
-        subprocess.call(["cp", paramsfile, params['out_dir']])
-        
+        path_paramsfile = os.path.join(params['out_dir'], misc['paramsfile_name'])
+        with open(path_paramsfile, "w") as f:
+            f.write(misc['paramsfile_text'])
+
         # Initialize lisa class
         lisa =  LISA(params, inj)
-        
+
         ## save the Model and Injection as needed
-        
+
         ## the Injection is massive, so discard the responses we no longer need
         ## saving & discarding now, as opposed to at the end of the run also saves space in the checkpoint files.
         if not params['load_data']:
             ## save Injection
-            for cmn in lisa.Injection.component_names:
-                if hasattr(lisa.Injection.components[cmn],'response_mat'):
-                    del lisa.Injection.components[cmn].response_mat
-                if hasattr(lisa.Injection.components[cmn],'summ_response_mat'):
-                    del lisa.Injection.components[cmn].summ_response_mat
-                if hasattr(lisa.Injection.components[cmn],'inj_response_mat'):
-                    del lisa.Injection.components[cmn].inj_response_mat
+            for cmn in lisa.injection.component_names:
+                if hasattr(lisa.injection.components[cmn],'response_mat'):
+                    del lisa.injection.components[cmn].response_mat
+                if hasattr(lisa.injection.components[cmn],'summ_response_mat'):
+                    del lisa.injection.components[cmn].summ_response_mat
+                if hasattr(lisa.injection.components[cmn],'inj_response_mat'):
+                    del lisa.injection.components[cmn].inj_response_mat
             with open(params['out_dir'] + '/injection.pickle', 'wb') as outfile:
-                pickle.dump(lisa.Injection, outfile)
+                pickle.dump(lisa.injection, outfile)
             print("Saved Injection to "+params['out_dir']+"/injection.pickle")
             
             ## also save the injected skymaps for later use
-            lisa.Injection.extract_and_save_skymap_data(map_data_path=params['out_dir']+"/plot_data.pickle")
+            lisa.injection.extract_and_save_skymap_data(map_data_path=params['out_dir']+"/plot_data.pickle")
             
             ## save generated data
             np.savez_compressed(params['out_dir']+'/simulated_data.npz',timearray=lisa.timearray,h1=lisa.h1,h2=lisa.h2,h3=lisa.h3)
@@ -875,7 +605,15 @@ def blip(paramsfile='params.ini',resume=False):
     else:
         print("Resuming a previous analysis. Reloading data and sampler state...")
 
+    # run user code to modify the model before sampling
+    if pre_sample_hook is not None:
+        print("Pre-sample hook was provided. Running hook...")
+        lisa.Model = pre_sample_hook(lisa.Model, parsed_params)
+        print("Done running pre-sample hook.")
+
     if params['sampler'] == 'dynesty':
+        from blip.src.dynesty_engine import dynesty_engine
+
         # Create engine
         if not resume:
             # multiprocessing
@@ -922,6 +660,8 @@ def blip(paramsfile='params.ini',resume=False):
         np.savetxt(params['out_dir'] + "/logzerr.txt", logzerr)
 
     elif params['sampler'] == 'emcee':
+        from blip.src.emcee_engine import emcee_engine
+
         # multiprocessing
         if nthread>1:
             pool=Pool(nthread)
@@ -937,6 +677,10 @@ def blip(paramsfile='params.ini',resume=False):
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
 
     elif params['sampler'] == 'numpyro':
+        if nthread > 1:
+            os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
+        from blip.src.numpyro_engine import numpyro_engine
+
         ## create engine
         Ntotal = params['Nsamples']
         if not resume:
@@ -1007,7 +751,8 @@ def blip(paramsfile='params.ini',resume=False):
             print("Elapsed time to converge: {} s".format(t2-t1))
         ## save chain
         np.savetxt(params['out_dir'] + "/post_samples.txt",post_samples)
-    
+
+# FIXME either make this work or remove this code
 #    elif params['sampler'] == 'numpyro_nested':
 #        ## create engine
 #        Ntotal = params['Nsamples']
@@ -1074,7 +819,7 @@ def blip(paramsfile='params.ini',resume=False):
     ## reload the Model and Injection if needed
     if not resume:
         plotting_Model = lisa.Model
-        plotting_Injection = lisa.Injection
+        plotting_Injection = lisa.injection
     else:
         ## grab the model and injection
         with open(params['out_dir'] + '/model.pickle', 'rb') as modelfile:
@@ -1087,6 +832,7 @@ def blip(paramsfile='params.ini',resume=False):
     matplotlib.rcParams.update(matplotlib.rcParamsDefault)
     if not params['load_data']:
         cornermaker(post_samples, params, parameters, inj, plotting_Model, Injection=plotting_Injection)
+        # FIXME plotting_Injection possibly used before assignment
     else:
         cornermaker(post_samples, params, parameters, inj, plotting_Model)
     if plotting_Model.Npar >= 10:
@@ -1110,15 +856,31 @@ def blip(paramsfile='params.ini',resume=False):
             mapmaker(post_samples, params, parameters, plotting_Model, coord=params['healpy_proj'], cmap=params['colormap'])
         else:
             mapmaker(post_samples, params, parameters, plotting_Model, cmap=params['colormap'])
-        
-    
+
+
+def blip(paramsfile, *, resume):
+    """Run BLIP on a given parameter file with given command-line options.
+
+    Parameters
+    ----------
+    paramsfile : str
+        Path to INI parameter file.
+    resume : bool
+        CLI option to resume from a checkpointed run.
+    """
+    parsed_params = parse_config(paramsfile, resume)
+    run_pipeline(parsed_params, resume)
+
+
+def main():
+    if len(sys.argv) != 2:
+        if sys.argv[2] == "resume":
+            blip(sys.argv[1], resume=True)
+        else:
+            raise ValueError("Provide (only) the params file as an argument")
+    else:
+        blip(sys.argv[1], resume=False)
+
 
 if __name__ == "__main__":
-
-    if len(sys.argv) != 2:
-        if sys.argv[2] == 'resume':
-            blip(sys.argv[1],resume=True)
-        else:
-            raise ValueError('Provide (only) the params file as an argument')
-    else:
-        blip(sys.argv[1])
+    main()
