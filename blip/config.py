@@ -30,8 +30,8 @@ class Option:
 # Here is what they look like.
 
 SECTION_PARAMS = [
-    Option("fmin", desc="TODO", required=True),
-    Option("fmax", desc="TODO", required=True),
+    Option("fmin", desc="Minimum frequency.", required=True),
+    Option("fmax", desc="Maximum frequency.", required=True),
     Option(
         "duration",
         desc="Duration in seconds, should be compatiable with fmin.",
@@ -61,7 +61,7 @@ SECTION_PARAMS = [
         consistent recoveries.""",
         default="0.25",
     ),
-    Option("Shfile", desc="TODO", default="LISA_2017_PSD_M.npy"),
+    Option("Shfile", desc="[TODO -- check depreciation]", default="LISA_2017_PSD_M.npy"),
     Option("load_data", desc="Whether to load data from `datafile`.", default="false"),
     Option(
         "datatype",
@@ -132,16 +132,20 @@ SECTION_PARAMS = [
     ),
     Option(
         "nside", desc="Healpix nside (skymap resolution).", required=True
-    ),  # FIXME why is this always required?
-    Option("model_basis", desc="TODO", default="pixel"),
+    ),  # why is this always required? It's always used and the choice matters for memory and accuracy
+    Option("model_basis",
+           desc="""
+               Skymap representation. Can be 'pixel' (Criswell+25 pixelated skymaps)
+                   or 'sph' (Banagiri+21 spherical harmonics).
+               """,
+           default="pixel"),
     Option(
         "tstart",
         desc="Start time in seconds. Determines starting orbital position.",
         default="0.0",
     ),
     Option("lmax", desc="spherical harmonic lmax for the b_lms (a_lmax/2)"),
-    Option("hierarchy", desc="FIXME: doesn't do anything!"),
-    Option("faster_geometry", desc="Enable new response module", default="false"),
+    Option("faster_geometry", desc="Enable new response module", default="true"),
 ]
 
 SECTION_INJ = [
@@ -156,7 +160,7 @@ SECTION_INJ = [
         desc="If true, BLIP will perform only the injection and data generation process, then exit.",
         default="false",
     ),
-    Option("injdir", desc="TODO"),
+    Option("injdir", desc="If loadInj, path to injection directory."),
     Option(
         "injection",
         desc="""
@@ -164,7 +168,11 @@ SECTION_INJ = [
             Same syntax as for the Recovery Model
             Additional option: "population" generates spectral/spatial distributions from a DWD population""",
     ),
-    Option("inj_basis", desc="TODO", default="pixel"),
+    Option("inj_basis", desc="""
+                            Skymap representation for the injection. Can be 'pixel' (Criswell+25 pixelated skymaps)
+                                or 'sph' (Banagiri+21 spherical harmonics).
+                            """,
+                        default="pixel"),
     Option(
         "truevals",
         desc="""
@@ -187,7 +195,7 @@ SECTION_INJ = [
             How many processes to use for injection parallelization.
             No benefit from N_threads > N_components. Defaults to N_components.""",
     ),
-    Option("response_nthread", desc="TODO", default="1"),
+    Option("response_nthread", desc="[TODO -- update or depreciate]", default="1"),
     Option(
         "inj_lmax",
         desc="Injection blmax. If not specified, will match to the analysis lmax.",
@@ -206,7 +214,7 @@ SECTION_INJ = [
 SECTION_RUN_PARAMS = [
     Option(
         "sampler",
-        desc="""Sampler to use. Supported: dynesty, emcee, numpyro.""",
+        desc="""Sampler to use. Supported: dynesty, numpyro.""",
         required=True,
     ),
     Option("out_dir", desc="Output directory.", required=True),
@@ -263,7 +271,7 @@ SECTION_RUN_PARAMS = [
     ),
     Option(
         "Nburn",
-        desc="Length of burn-in phase. Affects emcee and numpyro.",
+        desc="Length of burn-in phase. Affects numpyro.",
         default="1000",
     ),
     Option(
@@ -309,11 +317,7 @@ SECTION_RUN_PARAMS = [
             has concluded by setting additional_samples in the run directory's param file and doing:
             run_blip [paramsfile] resume""",
         default="0",
-    ),
-    Option("verbose", desc="FIXME: doesn't do anything!"),
-    Option("nessai_neurons", desc="FIXME: doesn't do anything!"),
-    Option("n_neurons", desc="FIXME: doesn't do anything!"),
-    Option("reset_flow", desc="FIXME: doesn't do anything!"),
+    )
 ]
 
 # A few options have fallback values that are set dynamically depending on
@@ -837,32 +841,15 @@ def parse_config(paramsfile: str, resume: bool):
     ## dynesty
     if params["sampler"] == "dynesty":
         params["sample_method"] = config_run_params["sample_method"]
-    ## emcee
-    elif params["sampler"] == "emcee":
-        params["Nburn"] = int(config_run_params["Nburn"])
-        params["Nsamples"] = int(config_run_params["Nsamples"])
     ## numpyro
     elif params["sampler"] == "numpyro":
         params["show_progress"] = config_run_params.getboolean("show_progress")
         params["Nburn"] = int(config_run_params["Nburn"])
         params["Nsamples"] = int(config_run_params["Nsamples"])
 
-    # TODO either remove this branch entirely or uncomment it.
-    # NOTE numpyro_nested_engine has been commented out of blip.src.numpyro_engine
-    # so this code path wouldn't work if it was kept uncommented.
-    #
-    # ## numpyro nested sampling
-    # elif params['sampler'] == 'numpyro_nested':
-    #     if nthread > 1:
-    #         os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count={}'.format(nthread)
-    #     from blip.src.numpyro_engine import numpyro_nested_engine
-    #     params['show_progress'] = int(config.get("run_params", "show_progress", fallback=1))
-    #     params['Nburn'] = int(config.get("run_params", "Nburn",fallback=1000))
-    #     params['Nsamples'] = int(config.get("run_params", "Nsamples",fallback=1000))
-
     else:
         raise ValueError(
-            "Unknown sampler. Supported samplers: 'dynesty', 'emcee', and 'numpyro'."
+            "Unknown sampler. Supported samplers: 'dynesty' and 'numpyro'."
         )
     # checkpointing (dynesty+numpyro only for now)
     if params["sampler"] == "dynesty" or params["sampler"] == "numpyro":
