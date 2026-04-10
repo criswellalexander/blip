@@ -38,4 +38,4 @@ Two other helpful parameter files are also included: params_test.ini, which has 
 
 Posterior plots will be automatically created in the specified output directory, along with some diagnostics. All statistical model information is saved in Model.pickle; all information used to perform the injection is likewise saved in Injection.pickle. The posterior samples are saved to post_samples.txt.
 
-More details can be found in [the code documentation](https://blip.readthedocs.io/en/latest/).
+More details can be found in [the code documentation](https://blip-gw.readthedocs.io/en/latest/).
