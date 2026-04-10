@@ -2,3 +2,4 @@ dynesty
 chainconsumer
 healpy
 recommonmark
+sphinx-rtd-theme
