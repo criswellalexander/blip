@@ -174,7 +174,7 @@ def calculate_response_functions(freqs, times, submodels, params, plot_flag=Fals
         output_shape = (3, 3, nf, nt)
         if sm.has_map and sm.parameterized_map:
             if sm.basis == "pixel":
-                sky_size = np.sum(sm.mask_idx)
+                sky_size = len(sm.mask_idx)
             else:
                 sky_size = (sm.almax + 1) ** 2
             output_shape = (3, 3, nf, nt, sky_size)
@@ -262,14 +262,14 @@ def _do_parameterized_submodel(sm, gridinfo, skyinfo, interpolator, resp_s):
     active_pixels_idx = skyinfo.active_pixels_idx
 
     if sm.basis == "pixel":
-        sky_size = np.sum(sm.mask_idx)
+        sky_size = len(sm.mask_idx)
         rmat = np.zeros((3, 3, nf, nt, sky_size), dtype=complex)
         postf_dims = 2  # nb of tensor dimensions after freqs
-
-        for i, response_sparse in zip(active_pixels_idx, resp_s):
+        assert np.allclose(sm.mask_idx,active_pixels_idx)
+        for j, (i,response_sparse) in enumerate(zip(active_pixels_idx, resp_s)):
             if i in sm.mask_idx:
                 response = interpolator(response_sparse)
-                rmat[..., i] = response
+                rmat[..., j] = response
 
     elif sm.basis == "sph":
         alm_size = (sm.almax + 1) ** 2
