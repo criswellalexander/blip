@@ -361,6 +361,46 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
             else:
                 raise ValueError("mwspec is an inference-only spectral submodel. Use the truncatedpowerlaw submodel for injections.")
 
+        elif self.spectral_model_name == 'doublebrokentruncpowerlaw':
+            ## implementation of a broken, truncated power law foreground model.
+            ## this is a variation of the tanh-truncated foreground, but with
+            ## additional, time-dependent shape parameters due to subtraction of resolved systems
+            ## for the BLIP implementation, it has been recast into Omega_GW space
+            ## NOTE: This version has no fixed parameters.
+                #def truncated_doublebroken_powerlaw_spectrum(self,fs,alpha_1, alpha_2, alpha_3, delta1, delta2, log_omega0, log_fcut, log_fscale, log_fbreak1, log_fbreak2):
+
+
+            self.spectral_parameters = self.spectral_parameters + [r'$\alpha_1$', r'$\alpha_2$', r'$\alpha_3$', r'$\delta_1$', r'$\delta_2$', r'$\log_{10}\Omega_{\rm GW}$',r'$\log_{10}f_{\rm cut}$', r'$\log_{10}f_{\rm scale}$', r'$\log_{10}f_{\rm break1}$', r'$\log_{10}f_{\rm break2}$']
+            self.omegaf = self.truncated_doublebroken_powerlaw_spectrum
+            self.fancyname = "MW Foreground"+submodel_count
+            if not injection:
+                self.spectral_prior = self.truncated_doublebroken_powerlaw_prior
+            else:
+                ## define truevals
+                self.truevals[r'$\alpha_1$'] = self.injvals['alpha_1']
+                self.truevals[r'$\alpha_2$'] = self.injvals['alpha_2']
+                self.truevals[r'$\alpha_3$'] = self.injvals['alpha_3']
+                self.truevals[r'$\delta_1$'] = self.injvals['delta1']
+                self.truevals[r'$\delta_2$'] = self.injvals['delta2']
+                self.truevals[r'$\log_{10}\Omega_{\rm GW}$'] = jnp.log10(self.injvals['Omega_GW'])
+                if 'fcut' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm cut}$'] = jnp.log10(self.injvals['fcut'])
+                elif 'log_fcut' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm cut}$'] = self.injvals['log_fcut']
+                if 'fscale' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm scale}$'] = jnp.log10(self.injvals['fscale'])
+                elif 'log_fscale' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm scale}$'] = self.injvals['log_fscale']
+                if 'fbreak1' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm break1}$'] = jnp.log10(self.injvals['fbreak1'])
+                elif 'log_fbreak1' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm break1}$'] = self.injvals['log_fbreak1']
+                if 'fbreak2' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm break2}$'] = jnp.log10(self.injvals['fbreak2'])
+                elif 'log_fbreak2' in self.injvals.keys():
+                    self.truevals[r'$\log_{10}f_{\rm break2}$'] = self.injvals['log_fbreak2']
+                self.fixedvals = self.truevals
+
         elif self.spectral_model_name == 'bdspec':
             # A spectral model for either the MW bulge or the MW disk.
             self.spectral_parameters = self.spectral_parameters + [r'$\log_{10} (\Omega_{\rm ref})$', r'$\log_{10} (f_{\mathrm{cut}})$',r'$\log_{10} (f_{\mathrm{scale}})$']
@@ -1186,6 +1226,39 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
         fscale = 10**self.fixedvals['log_fscale']
         return 0.5 * (10**log_omega0)*(fs/self.params['fref'])**(self.fixedvals['alpha']) * (1+jnp.tanh((fcut-fs)/fscale))
 
+    def truncated_doublebroken_powerlaw_spectrum(self,fs,alpha_1, alpha_2, alpha_3, delta1, delta2, log_omega0, log_fcut, log_fscale, log_fbreak1, log_fbreak2):
+            '''
+            Function to calculate a tanh-truncated power law spectrum.
+            Arguments
+            -----------
+            fs (array of floats) : frequencies at which to evaluate the spectrum
+            alpha_1 (float)      : slope of the first power law
+            alpha_2 (float)      : slope of the second power law
+            alpha_3 (float)      : slope of the third power law
+            delta1 (float)       : smoothing parameter between the first and second powerlaws.
+            delta2 (float)       : smoothing parameter between the second and third powerlaws.
+            log_omega0 (float)   : power law amplitude of the power law in units of log dimensionless GW energy density at f_ref (if left un-truncated)
+            log_fcut (float)     : log of the cut frequency ("knee") in Hz
+            log_fscale           : log of the cutoff scale factor in Hz
+            log_fbreak1 (float)  : log of the first break frequency ("knee") in Hz
+            log_fbreak2 (float)  : log of the second break frequency ("knee") in Hz
+            Returns
+            -----------
+            spectrum (array of floats) : the resulting truncated power law spectrum
+            '''
+            fcut = 10**log_fcut
+            fscale = 10**log_fscale
+            fbreak1 = 10**log_fbreak1
+            fbreak2 = 10**log_fbreak2
+            norm = (fbreak1/self.params['fref'])**alpha_1 ## this normalizes the broken powerlaw such that its first leg matches the equivalent standard power law
+
+            brokenpl1 = (1+(fs/fbreak1)**(1/delta1))**((alpha_1-alpha_2)*delta1)
+            brokenpl2 = (1+(fs/fbreak2)**(1/delta2))**((alpha_2-alpha_3)*delta2)
+            tanhtrunc = (1+jnp.tanh((fcut-fs)/fscale))
+
+
+            return 0.5 * norm * (10**log_omega0)*(fs/fbreak1)**(alpha_1) * tanhtrunc * brokenpl1 * brokenpl2
+
     def robson19_foreground_spectrum(self,fs,logA):
         '''
         Function to calculate an analytical spectrum for the Galactic foreground of the form given in Robson et al. (2019) (arXiv:1803.01944)
@@ -1903,6 +1976,40 @@ class submodel(fast_geometry,clebschGordan,instrNoise):
 
 
         return [alpha, log_omega0, log_fcut, log_fscale]
+
+    def truncated_doublebroken_powerlaw_prior(self,theta):
+
+
+        '''
+        Prior function for a stochastic signal search with a truncated doublebroken power law spectral model.
+        Parameters
+        -----------
+        theta   : float
+            A list or numpy array containing samples from a unit cube.
+        Returns
+        ---------
+        theta   :   float
+            theta with each element rescaled. 
+            The elements are  interpreted as alpha_1, alpha_2, alpha_3, delta1, delta2, log_omega0, log_fcut, log_fscale, log_fbreak1, log_fbreak2
+        '''
+
+        # Unpack: Theta is defined in the unit cube
+        # Transform to actual priors
+        alpha_1 = 10*theta[0] - 4
+        alpha_2 = 40*theta[1]
+        alpha_3 = (34+44)*theta[2] - 44 # LSS [34, 44] so alpha2-alpha3 is [-44, 6], equivalent to alpha1-alpha2 range.
+        delta1 = 0.99*theta[3] + 0.01
+        delta2 = 0.99*theta[4] + 0.01
+        log_omega0 = -22*theta[5]
+        # LSS  .8-10 mHz in log10 is -3.0969100130080562 to -2.0
+        log_fcut = -(1.0969100130080562*theta[6] + 2) 
+        log_fscale = -2*theta[7] - 2
+        # LSS .6-.8mHz in log10 is -3.2218487496163566 to -3.0969100130080562
+        log_fbreak1 = (-3.0969100130080562+3.2218487496163566)*theta[8] - 3.2218487496163566 
+        # LSS .2-.599 mHz in log10 is -3.6989700043360187 to -3.2225731776106885
+        log_fbreak2 = (-3.2225731776106885+3.6989700043360187)*theta[9] - 3.6989700043360187 
+
+        return [alpha_1, alpha_2, alpha_3, delta1, delta2, log_omega0, log_fcut, log_fscale, log_fbreak1, log_fbreak2]
 
     def bdspec_prior(self,theta):
         """Prior for spectrum of bulge or disk of MW (bdspec).
