@@ -224,8 +224,8 @@ class LISAdata():
         ## Loop over splice segments
         print("Simulating time-domain data for component '{}'...".format(injmodel.name))
         for ii in tqdm(range(self.injection.nsplice), desc=injmodel.name, unit="splice"):
-            # Do Cholesky decomposition assuming certain symmetries
-            L_cholesky = cholesky_symm(injmodel.response_mat[:, :, :, ii])
+            # Matrix square root of the (possibly anisotropic, rank-deficient) response
+            L_cholesky = sqrt_psd(injmodel.response_mat[:, :, :, ii])
             L_cholesky = xp.moveaxis(L_cholesky, -1, 0)
             # multiply by ASD
             L_cholesky = norms[:, xp.newaxis, xp.newaxis] * L_cholesky
@@ -551,49 +551,42 @@ class LISAdata():
         return h1, h2, h3, times
 
 
-def cholesky_symm(m):
-    r"""Cholesky decomposition of response matrix.
+def sqrt_psd(m):
+    '''
 
-    Parameters
-    ----------
+    Matrix square root L of a Hermitian positive-semidefinite response matrix, such that m = L L^H.
+
+    Used to colour standard complex normal draws (z_scale = L z has covariance m). Computed via an
+    eigendecomposition rather than a Cholesky decomposition, as the XYZ SGWB response is rank-2
+    (the null-channel direction has ~zero eigenvalue), which makes standard Cholesky return NaNs.
+    Unlike the previous symmetric Cholesky approach, no channel symmetry is assumed, so this is
+    valid for anisotropic as well as isotropic skies. L is not triangular; this does not matter
+    for data generation, since any L with L L^H = m gives the same distribution for L z.
+
+    Arguments
+    ------------------------------
     m : complex array (3, 3, ...)
-        Response matrix. Assumed to have the form
-
-        .. math::
-            \begin{pmatrix}A & B & B \\ B^* & A & B \\ B^* & B^* & A\end{pmatrix}
+    	Response matrix, with the two TDI channel axes first.
 
     Returns
-    -------
-    complex array (3, 3, ...)
-        Lower-triangular matrix L such that m = L L^H.
-    """
-    # manual cholesky decomposition assuming response mat of the form
-    #     [ A  B  B ]
-    # M = [ B* A  B ]. We take the elements of M from averaging the diagonal and
-    #     [ B* B* A ]
-    # off-diagonal components of the response_mat.
-    # We do this custom decomposition to avoid NaNs because the SGWB response is rank-2.
+    ------------------------------
+    sqrt_m : complex array (3, 3, ...)
+    	Matrix L such that m = L L^H, with the same shape as m.
+
+    '''
     chex.assert_shape(m, (3, 3, ...))
-    a = jnp.mean(jnp.array([m[0, 0], m[1, 1], m[2, 2]]), axis=0)
-    b = jnp.mean(jnp.array([m[0, 1], m[0, 2], m[1, 2]]), axis=0)
+    ## move channel axes last for the batched linear algebra: (..., 3, 3)
+    mm = jnp.moveaxis(m, (0, 1), (-2, -1))
+    ## enforce exact Hermiticity to remove numerical noise before eigh
+    mm = 0.5 * (mm + jnp.conj(jnp.swapaxes(mm, -1, -2)))
+    evals, evecs = jnp.linalg.eigh(mm)
+    ## clip the (numerically) negative eigenvalues of the rank-deficient direction to zero
+    ## L = V diag(sqrt(lambda)), scaling each eigenvector column
+    sqrt_mm = evecs * jnp.sqrt(jnp.clip(evals, 0.0))[..., None, :]
+    sqrt_m = jnp.moveaxis(sqrt_mm, (-2, -1), (0, 1))
 
-    # a must be positive
-    a = jnp.abs(a)
-
-    mu = jnp.sqrt(a)
-    lam = b.conj() / mu
-    rho = lam
-    sigma2 = jnp.maximum(0.0, a - jnp.abs(lam) ** 2)
-    sigma = jnp.sqrt(sigma2)
-    kappa = (b.conj() - jnp.abs(lam) ** 2) / sigma
-    beta2 = jnp.maximum(0.0, a - jnp.abs(kappa) ** 2 - jnp.abs(lam) ** 2)
-    beta = jnp.sqrt(beta2)
-
-    _z = 0.0 * mu
-    res = jnp.array([[mu, _z, _z], [lam, sigma, _z], [rho, kappa, beta]])
-
-    chex.assert_equal_shape([m, res])
-    return res
+    chex.assert_equal_shape([m, sqrt_m])
+    return sqrt_m
 
 
 # Functions prefixed with _ldc were imported from the LDC hdf5 I/O module
